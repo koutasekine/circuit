@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<!--
+  回路図 — テキスト記法から回路図を描く単一 HTML ツール(記号は高校の教科書などで使われる形)
+  https://circuit.sapp.jp
+
+  MIT License
+  Copyright (c) 2026 Kouta Sekine
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+  このファイルは外部ライブラリを使わず、データをどこにも送信しません。ネットワークなしで動きます。
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>回路図</title>
+<style>
+:root{
+  --bg:#f4f4f2; --panel:#fff; --line:#d8d8d4; --text:#222; --accent:#8b1a2b; --err:#b00020; --warn:#9a5b00; --sel:#fff3c4;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:"Segoe UI","Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;font-size:14px;color:var(--text);background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:16px;margin:0 10px 0 0;font-weight:600}
+header .sp{flex:1}
+button,select,label.btn{font:inherit;padding:4px 10px;border:1px solid #bbb;border-radius:4px;background:#fafafa;cursor:pointer;color:var(--text)}
+button:hover,label.btn:hover{background:#f0f0ee}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+main{flex:1;display:flex;min-height:0}
+#left{width:38%;min-width:260px;display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--panel)}
+#splitter{width:6px;cursor:col-resize;background:var(--line)}
+#right{flex:1;display:flex;flex-direction:column;min-width:0}
+#editor{flex:1;position:relative;min-height:0}
+textarea#src,#hl{position:absolute;inset:0;margin:0;border:0;padding:10px;font:13px/1.5 Consolas,"Courier New",monospace;tab-size:4;white-space:pre;overflow:auto;box-sizing:border-box;word-break:normal;overflow-wrap:normal}
+textarea#src{resize:none;outline:none;background:transparent;color:transparent;caret-color:#222;z-index:1}
+#hl{pointer-events:none;color:#222;background:#fff;z-index:0}
+#hl .kw{color:#8b1a2b;font-weight:600}#hl .st{color:#1a6b3a}#hl .nu{color:#1d4ed8}#hl .cm{color:#888}#hl .bi{color:#6b3fa0}#hl .fn{color:#0b5c8a}#hl .op{color:#8b1a2b}
+#msg{padding:6px 10px;border-top:1px solid var(--line);font-size:13px;min-height:2.6em;max-height:9em;overflow:auto;background:#fcfcfa}
+#msg .err{color:var(--err)}
+#msg .warn{color:var(--warn)}
+#msg .ok{color:#2a6b2a}
+#msg div{margin:1px 0}
+#view{flex:1;overflow:auto;background:#fff;position:relative}
+#view svg{display:block}
+#view.stale svg{opacity:.45}
+#view.paged{background:#e4e4e0;padding:16px}
+#view.paged svg{margin:0 auto 16px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+@media print{ #view.paged{background:#fff;padding:0} #view.paged svg{margin:0;box-shadow:none;page-break-after:always} .screen-only{display:none} }
+#edit{border-top:1px solid var(--line);background:var(--panel);padding:8px 10px;display:none;gap:6px;flex-wrap:wrap;align-items:center}
+#edit.on{display:flex}
+#edit input[type=text]{font:13px Consolas,"Courier New",monospace;padding:4px 6px;border:1px solid #bbb;border-radius:4px;min-width:200px;flex:1}
+#edit .grp{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+#edit .kind{font-weight:600;margin-right:6px}
+.sym.selected .shape{fill:var(--sel)}
+.sym{cursor:pointer}
+.sym:hover .shape{fill:#f6f6f0}
+dialog{border:1px solid #999;border-radius:6px;padding:16px 20px;max-width:760px;font-size:14px}
+dialog h2{font-size:16px;margin:0 0 8px}
+dialog h3{font-size:14px;margin:14px 0 6px}
+dialog pre{background:#f6f6f2;padding:8px;overflow:auto;font-size:12px}
+dialog table{border-collapse:collapse;font-size:13px}
+dialog td,dialog th{border:1px solid #ccc;padding:3px 8px;text-align:left;vertical-align:top}
+#drop{position:absolute;inset:0;background:rgba(139,26,43,.08);border:3px dashed var(--accent);display:none;align-items:center;justify-content:center;font-size:20px;color:var(--accent);pointer-events:none}
+#drop.on{display:flex}
+.small{font-size:12px;color:#666}
+footer{font-size:11px;color:#777;padding:3px 10px;border-top:1px solid var(--line);background:var(--panel)}
+footer a{color:#777}
+@media print{ @page{margin:0} header,#left,#splitter,#edit,footer{display:none !important} body,main,#right,#view{display:block;overflow:visible;height:auto} }
+</style>
+</head>
+<body>
+<header>
+  <h1>回路図</h1>
+  <button id="btnNew">新規</button>
+  <label class="btn">開く<input type="file" id="fileOpen" accept=".txt,.json,.svg" style="display:none"></label>
+  <select id="saveAs">
+    <option value="">保存…</option>
+    <option value="json">JSON</option>
+    <option value="svg">SVG</option>
+    <option value="png">PNG</option>
+    <option value="txt">テキスト(.txt)</option>
+    <option value="print">印刷 / PDF</option>
+  </select>
+  <label><input type="checkbox" id="optAllPins"> 使っていないピンも表示</label>
+  <label>用紙 <select id="optPage"><option value="">なし</option><option value="A4P">A4 縦</option><option value="A4L">A4 横</option></select></label>
+  <span class="sp"></span>
+  <button id="btnSample">例を読み込む</button>
+  <button id="btnHelp">書き方</button>
+</header>
+<main>
+  <div id="left">
+    <div id="editor"><pre id="hl" aria-hidden="true"></pre><textarea id="src" spellcheck="false" placeholder="ここに回路をテキスト記法で書くと右に回路図が出ます。「書き方」ボタンで使える書き方と部品を確認できます。"></textarea></div>
+    <div id="msg"></div>
+  </div>
+  <div id="splitter"></div>
+  <div id="right">
+    <div id="view"><div id="drop">ファイルを置くと開きます(.txt / .json / .svg)</div></div>
+    <div id="edit"></div>
+  </div>
+</main>
+<footer>回路図 — テキスト記法から回路図を描きます。記号は高校の教科書などで使われる形です。単一 HTML、データはどこにも送信されません。MIT License, Copyright (c) 2026 Kouta Sekine. <a href="https://sapp.jp" target="_blank" rel="noopener">S Apps</a></footer>
+
+<dialog id="dlgHelp"></dialog>
+
+<script>
+'use strict';
+const CIRC = (() => {
+
+/* =====================================================================
+   1. 組み込みの部品
+   pins の 1 番目が「連鎖の入る側」(極性のある部品ではアノード・正極)
+   ===================================================================== */
+const BUILTIN = {
+  R:    {label:'抵抗',             pins:['1','2'], sym:'R'},
+  VR:   {label:'可変抵抗',         pins:['1','2'], sym:'VR'},
+  C:    {label:'コンデンサ',       pins:['1','2'], sym:'C'},
+  CE:   {label:'電解コンデンサ',   pins:['+','-'], sym:'CE'},
+  L:    {label:'コイル',           pins:['1','2'], sym:'L'},
+  D:    {label:'ダイオード',       pins:['A','K'], sym:'D'},
+  ZD:   {label:'ツェナーダイオード', pins:['A','K'], sym:'ZD'},
+  LED:  {label:'発光ダイオード',   pins:['A','K'], sym:'LED'},
+  BAT:  {label:'電池(直流電源)', pins:['+','-'], sym:'BAT'},
+  AC:   {label:'交流電源',         pins:['1','2'], sym:'AC'},
+  SW:   {label:'スイッチ',         pins:['1','2'], sym:'SW'},
+  PB:   {label:'押しボタンスイッチ(タクトスイッチ)', pins:['1','2'], sym:'PB'},
+  POT:  {label:'ボリューム(しゅう動接点付き抵抗器)', pins:['1','2','3'], sym:'POT'},
+  LAMP: {label:'電球',             pins:['1','2'], sym:'LAMP'},
+  AM:   {label:'電流計',           pins:['+','-'], sym:'AM'},
+  VM:   {label:'電圧計',           pins:['+','-'], sym:'VM'},
+  M:    {label:'モーター',         pins:['1','2'], sym:'M'},
+  NPN:  {label:'NPN トランジスタ', pins:['B','C','E'], sym:'NPN'},
+  PNP:  {label:'PNP トランジスタ', pins:['B','C','E'], sym:'PNP'},
+  NMOS: {label:'N チャネル MOS FET(エンハンスメント形)', pins:['G','D','S'], sym:'NMOS'},
+  PMOS: {label:'P チャネル MOS FET(エンハンスメント形)', pins:['G','D','S'], sym:'PMOS'},
+  NMOSD:{label:'N チャネル MOS FET(デプレッション形)', pins:['G','D','S'], sym:'NMOSD'},
+  PMOSD:{label:'P チャネル MOS FET(デプレッション形)', pins:['G','D','S'], sym:'PMOSD'},
+  OPAMP:{label:'オペアンプ', pins:['+','-','OUT','V+','V-'], sym:'OPAMP'},
+  NOT:  {label:'NOT ゲート', pins:['A','Y'], sym:'NOT'},
+  AND:  {label:'AND ゲート', pins:['A','B','Y'], sym:'AND'},
+  OR:   {label:'OR ゲート', pins:['A','B','Y'], sym:'OR'},
+  NAND: {label:'NAND ゲート', pins:['A','B','Y'], sym:'NAND'},
+  NOR:  {label:'NOR ゲート', pins:['A','B','Y'], sym:'NOR'},
+  XOR:  {label:'XOR ゲート', pins:['A','B','Y'], sym:'XOR'},
+};
+// 形の決まった多端子の記号(トランジスタ・ボリューム・MOS FET・オペアンプ・論理ゲート)。kind 'tr' で扱う
+const FIXED_SYMS=['NPN','PNP','POT','NMOS','PMOS','NMOSD','PMOSD','OPAMP','NOT','AND','OR','NAND','NOR','XOR'];
+// 省略できるピン(つないだときだけ描く。つながっていなくても警告しない)
+const OPTIONAL_PINS={OPAMP:['V+','V-']};
+
+const isBuiltin=t=>Object.prototype.hasOwnProperty.call(BUILTIN, t);
+// 電源の名前をそろえる(+5V と 5V、5.0V と 5V は同じ電源)
+function canonPower(name){ if(name==='GND') return name; const m=/^([+-]?\d+(?:\.\d+)?)V$/.exec(name); return m? parseFloat(m[1])+'V' : name; }
+class ParseError extends Error { constructor(line, msg){ super(msg); this.line=line; } }
+
+const RE_INST=/^[A-Za-z_][A-Za-z0-9_]*$/;
+const RE_NET=/^[A-Za-z0-9_+\-.]+$/;
+const RE_TYPE=/^[^\s"#:=.]+$/;
+
+// 電源ネット: GND と「数字 + V」(5V、3.3V、12V、-12V など)
+function powerVolt(name){
+  if(name==='GND') return 0;
+  const m=/^([+-]?\d+(?:\.\d+)?)V$/.exec(name);
+  return m? parseFloat(m[1]) : null;
+}
+
+/* =====================================================================
+   2. 字句・構文解析
+   ===================================================================== */
+function stripComment(raw){
+  let q=false;
+  for(let i=0;i<raw.length;i++){
+    const c=raw[i];
+    if(c==='"') q=!q;
+    else if(c==='#' && !q) return {code:raw.slice(0,i), comment:raw.slice(i+1).trim()};
+  }
+  return {code:raw, comment:null};
+}
+
+function parse(text){
+  const lines=text.replace(/\r\n?/g,'\n').split('\n');
+  const parts=new Map(), insts=new Map(), conns=[], places=[];
+  let cur=null;
+  const closePart=()=>{ if(cur && cur.pins.length===0) throw new ParseError(cur.line,'part にピンがありません(次の行を字下げして top / left / right / bottom とピン名を書いてください)'); cur=null; };
+  for(let i=0;i<lines.length;i++){
+    const ln=i+1;
+    const {code,comment}=stripComment(lines[i]);
+    if((code.match(/"/g)||[]).length%2) throw new ParseError(ln,'引用符(")が閉じていません');
+    if(code.trim()==='') continue;
+    const indented=/^[ \t\u3000]/.test(code);
+    const s=code.trim();
+    if(indented){
+      if(!cur) throw new ParseError(ln,'字下げした行は part の中にだけ書けます');
+      const m=/^(top|left|right|bottom)\s+(.+)$/.exec(s);
+      if(!m) throw new ParseError(ln,'part の中には「top / left / right / bottom ピン名 …」の行だけが書けます');
+      const side=m[1];
+      if(cur.sides[side].length) throw new ParseError(ln,`${side} が二度書かれています(1 つの辺のピンは 1 行にまとめてください)`);
+      for(const tok of m[2].split(/\s+/)){
+        if(tok==='|'){ cur.sides[side].push(null); continue; }
+        const at=tok.split('@');
+        if(at.length>2 || (at.length===2 && !/^[0-9A-Za-z]+$/.test(at[1]))) throw new ParseError(ln,`ピン「${tok}」の形が違います(ピン番号は @ の後に英数字で書きます。例 VCC@14)`);
+        const names=at[0].split('/');
+        for(const nm of names){
+          if(nm==='' || /["#|]/.test(nm)) throw new ParseError(ln,`ピン名「${tok}」の形が違います(別名は / で区切ります。例 D13/SCK)`);
+          if(cur.alias.has(nm)) throw new ParseError(ln,`ピン名 ${nm} が二重に定義されています`);
+          cur.alias.set(nm, names[0]);
+        }
+        const pin={name:names[0], aliases:names.slice(1), side, num:at[1]||null};
+        cur.sides[side].push(pin); cur.pins.push(pin);
+      }
+      cur.lastLine=ln;
+      continue;
+    }
+    closePart();
+    let m;
+    if(/^part\s+[^\s=]/.test(s) || s==='part' || /^part\s*:/.test(s)){
+      m=/^part\s+(\S+?)(?:\s+"([^"]*)")?\s*:$/.exec(s);
+      if(!m || !RE_TYPE.test(m[1])) throw new ParseError(ln,'part の形が違います(part 種類名 "説明": の形。種類名に空白・. ・= ・: ・# は使えません)');
+      if(isBuiltin(m[1])) throw new ParseError(ln,`${m[1]} は組み込みの部品名なので part で定義できません(別の名前にしてください)`);
+      if(parts.has(m[1])) throw new ParseError(ln,`部品の種類 ${m[1]} が二重に定義されています`);
+      cur={name:m[1], label:m[2]??'', line:ln, sides:{top:[],left:[],right:[],bottom:[]}, pins:[], alias:new Map()};
+      parts.set(m[1],cur);
+      continue;
+    }
+    if(/(^|\s)--(\s|$)/.test(s) || s.includes('--')){
+      const terms=s.split(/\s+--\s+/);
+      for(const t of terms){
+        if(t==='' || /\s/.test(t) || t.includes('--') || t.startsWith('-') && t.length>1 && t[1]==='-') throw new ParseError(ln,'つなぐ文は「A -- B -- C」の形です(-- の前後に空白が必要で、両端にも名前が要ります)');
+      }
+      if(terms.length<2) throw new ParseError(ln,'つなぐ文には 2 つ以上の名前が必要です');
+      conns.push({line:ln, terms, comment});
+      continue;
+    }
+    if(/^place\s+[^\s=]/.test(s)){
+      m=/^place\s+(\S+)\s+(above|below|left|right)\s+(\S+)$/.exec(s);
+      if(!m) throw new ParseError(ln,'place の形が違います(place 部品名 above / below / left / right 部品名)');
+      places.push({line:ln, a:m[1], dir:m[2], b:m[3]});
+      continue;
+    }
+    m=/^([^\s=]+)\s*=\s*(\S+)(?:\s+(.+))?$/.exec(s);
+    if(m){
+      if(!RE_INST.test(m[1])) throw new ParseError(ln,`部品名「${m[1]}」の形が違います(英字で始まる英数字と _)`);
+      if(m[1]==='GND') throw new ParseError(ln,'GND は電源の名前なので部品名に使えません');
+      if(insts.has(m[1])) throw new ParseError(ln,`部品名 ${m[1]} が二重に使われています`);
+      insts.set(m[1], {name:m[1], type:m[2], value:(m[3]||'').trim(), line:ln, comment});
+      continue;
+    }
+    if(/^(top|left|right|bottom)\b/.test(s)) throw new ParseError(ln,'top / left / right / bottom の行は part の下に字下げして書きます');
+    throw new ParseError(ln,'文の形が違います(部品を置く「名前 = 種類 値」、つなぐ「A -- B」、部品の定義「part 種類名:」、配置「place A below B」のどれかです)');
+  }
+  closePart();
+
+  // 種類の解決
+  for(const I of insts.values()){
+    if(isBuiltin(I.type)){
+      const b=BUILTIN[I.type];
+      I.def={builtin:true, sym:b.sym, label:b.label, pins:b.pins.map(n=>({name:n, aliases:[], side:null})), alias:new Map(b.pins.map(n=>[n,n]))};
+    } else if(parts.has(I.type)){
+      const p=parts.get(I.type);
+      I.def={builtin:false, sym:'PART', label:p.label, part:p, pins:p.pins, alias:p.alias};
+    } else throw new ParseError(I.line,`種類 ${I.type} はありません(組み込みの部品か、part で定義した種類名を書いてください。「書き方」に一覧があります)`);
+    I.kind = FIXED_SYMS.includes(I.def.sym) ? 'tr' : (I.def.pins.length===2 ? 'el' : 'box');
+  }
+  for(const P of places){
+    for(const nm of [P.a, P.b]) if(!insts.has(nm)) throw new ParseError(P.line,`部品 ${nm} は置かれていません(place には置いた部品の名前を書きます)`);
+    if(P.a===P.b) throw new ParseError(P.line,'place の 2 つの部品が同じです');
+  }
+
+  // つなぐ文の解決
+  const bareUsed=new Map();
+  const chains=[];
+  for(const c of conns){
+    const items=[];
+    c.terms.forEach((t,k)=>{
+      const dot=t.indexOf('.');
+      if(dot>0){
+        const head=t.slice(0,dot), pn=t.slice(dot+1);
+        if(RE_INST.test(head)){
+          const I=insts.get(head);
+          if(!I) throw new ParseError(c.line,`部品 ${head} は置かれていません(「${head} = 種類」の行が必要です。接続の名前に . は使えません)`);
+          const p=I.def.alias.get(pn);
+          if(!p) throw new ParseError(c.line,`${head}(${I.type})にピン ${pn} はありません(ピン: ${I.def.pins.map(q=>q.name).join(' ')})`);
+          items.push({k:'pin', inst:I, pin:p});
+          return;
+        }
+      }
+      if(insts.has(t)){
+        const I=insts.get(t);
+        if(I.kind!=='el') throw new ParseError(c.line, I.def.pins.length===2? `${t}(${I.type})は連鎖に入れられないので、部品名だけでは書けません(${t}.ピン名 と書いてください)` : `${t} はピンが 2 本ではないので、部品名だけでは書けません(${t}.ピン名 と書いてください)`);
+        if(k===0 || k===c.terms.length-1) throw new ParseError(c.line,`部品名だけ(${t})を書けるのは連鎖の途中だけです。端ではピンを書いてください(例 ${t}.${I.def.pins[0].name})`);
+        if(bareUsed.has(t)) throw new ParseError(c.line,`${t} は ${bareUsed.get(t)} 行目の連鎖で使っています。部品名だけで書けるのは 1 回だけです(2 回目からはピンで書いてください)`);
+        bareUsed.set(t, c.line);
+        items.push({k:'el', inst:I});
+        return;
+      }
+      if(!RE_NET.test(t) || (t.includes('.') && powerVolt(t)===null)) throw new ParseError(c.line,`「${t}」は部品のピンでも接続の名前でもありません(接続の名前に使えるのは英数字と _ + - です)`);
+      items.push({k:'net', name:canonPower(t)});
+    });
+    chains.push({line:c.line, items});
+  }
+  return {parts, insts:[...insts.values()], chains, places};
+}
+
+/* =====================================================================
+   3. ネットリスト と 検査
+   ===================================================================== */
+function analyze(model){
+  const parent=new Map();
+  const find=k=>{ while(parent.get(k)!==k){ parent.set(k, parent.get(parent.get(k))); k=parent.get(k); } return k; };
+  const add=k=>{ if(!parent.has(k)) parent.set(k,k); };
+  const union=(a,b)=>{ add(a); add(b); const ra=find(a), rb=find(b); if(ra!==rb) parent.set(ra,rb); };
+  const pk=(I,p)=>`P:${I.name}.${p}`;
+  for(const I of model.insts) for(const p of I.def.pins) add(pk(I,p.name));
+  for(const ch of model.chains){
+    let prev=null;
+    for(const it of ch.items){
+      if(it.k==='el'){ const a=pk(it.inst,it.inst.def.pins[0].name), b=pk(it.inst,it.inst.def.pins[1].name); union(prev,a); prev=b; }
+      else { const key= it.k==='pin'? pk(it.inst,it.pin) : `N:${it.name}`; add(key); if(prev) union(prev,key); prev=key; }
+    }
+  }
+  const nets=new Map();
+  for(const k of parent.keys()){
+    const r=find(k);
+    if(!nets.has(r)) nets.set(r,{id:nets.size, pins:[], names:[]});
+    const n=nets.get(r);
+    if(k.startsWith('P:')){ const body=k.slice(2), d=body.indexOf('.'); n.pins.push({inst:body.slice(0,d), pin:body.slice(d+1)}); }
+    else n.names.push(k.slice(2));
+  }
+  const netList=[...nets.values()];
+  const pinNet=new Map();
+  const warns=[];
+  let auto=0;
+  for(const n of netList){
+    for(const p of n.pins) pinNet.set(p.inst+'.'+p.pin, n);
+    const pw=n.names.filter(x=>powerVolt(x)!==null);
+    if(pw.length>1) warns.push(`${pw.join(' と ')} が直接つながっています(電源の短絡)`);
+    if(pw.length){ n.power=pw[0]; n.volt=powerVolt(pw[0]); }
+    n.display = n.power || n.names[0] || null;
+  }
+  const netOf=(I,p)=>pinNet.get(I.name+'.'+p);
+  // 1 回しか書かれていない接続の名前(電源を除く)は書き間違いの疑い
+  const nameCount=new Map();
+  for(const ch of model.chains) for(const it of ch.items) if(it.k==='net') nameCount.set(it.name,(nameCount.get(it.name)||0)+1);
+  for(const [nm,k] of nameCount) if(k===1 && powerVolt(nm)===null) warns.push(`接続の名前 ${nm} は 1 回しか書かれていません(名前の書き間違いではありませんか)`);
+  for(const I of model.insts){
+    if(I.kind==='tr'){
+      const opt=OPTIONAL_PINS[I.def.sym]||[];
+      for(const p of I.def.pins){ if(opt.includes(p.name)) continue; const n=netOf(I,p.name); if(n.pins.length===1 && !n.names.length) warns.push(`${I.name} の端子 ${p.name} がどこにもつながっていません`); }
+    }
+    if(I.kind==='el'){
+      const [p0,p1]=I.def.pins.map(p=>p.name);
+      const n0=netOf(I,p0), n1=netOf(I,p1);
+      if(n0===n1) warns.push(`${I.name} の両端が同じ接続につながっています(${I.name} が短絡しています)`);
+      for(const [p,n] of [[p0,n0],[p1,n1]]) if(n.pins.length===1 && !n.names.length) warns.push(`${I.name} の端子 ${p} がどこにもつながっていません`);
+      // 極性の検査: 両端が電源・GND に直結しているときだけ判定する
+      if(n0.volt!=null && n1.volt!=null && n0!==n1){
+        const v0=n0.volt, v1=n1.volt, s=I.def.sym;
+        if((s==='D'||s==='ZD') && v0>v1) warns.push(`${I.name} が ${n0.power} から ${n1.power} へ順方向に直結されています(電源が短絡します)`);
+        if(s==='LED' && v0>v1) warns.push(`${I.name} が ${n0.power} と ${n1.power} に直結されています(電流を制限する抵抗がありません)`);
+        if(s==='LED' && v0<v1) warns.push(`${I.name} の向きが逆です(アノードが ${n0.power}、カソードが ${n1.power} 側です)`);
+        if(s==='CE' && v0<v1) warns.push(`${I.name} の極性が逆です(+ が ${n0.power}、- が ${n1.power} 側です)`);
+      }
+    }
+  }
+  for(const n of netList) if(!n.display && n.pins.length>1) n.display='N'+(++auto);
+  return {nets:netList, pinNet, netOf, warns};
+}
+
+/* =====================================================================
+   4. 記号の形(1 単位 = U px の格子、要素は横向き)
+   ===================================================================== */
+const U=10;
+const FONT=`"Segoe UI","Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif`;
+let measureCtx=null;
+function textWidth(s, px){
+  if(!measureCtx){ const c=document.createElement('canvas'); measureCtx=c.getContext('2d'); }
+  measureCtx.font=`${px||12}px ${FONT}`;
+  return measureCtx.measureText(s).width;
+}
+// 記号の上下の広がり(px)。ラベルはこの上に置く
+const SYM_H={R:6, VR:11, C:10, CE:14, L:8, D:8, ZD:11, LED:20, BAT:12, AC:13, SW:10, PB:18, LAMP:13, AM:13, VM:13, M:13, PART:9};
+
+// MOS FET・オペアンプ・論理ゲートの形(格子単位、中心 0,0)
+//   pins: ex,ey = 本体の辺、lx,ly = 引き出し線の端、dx,dy = 外向き
+//   body: 記号の範囲(px)。label: 名前を置く位置(px)と揃え
+const isMOS=s=>['NMOS','PMOS','NMOSD','PMOSD'].includes(s);
+const isGate=s=>['NOT','AND','OR','NAND','NOR','XOR'].includes(s);
+function fixGeom(sym){
+  const P=(name,ex,ey,lx,ly,dx,dy)=>({p:{name}, ex,ey,lx,ly,dx,dy});
+  if(isMOS(sym)) return {
+    // N チャネルは D が上・S が下、P チャネルは上下を入れ替えて S が上・D が下(電位の高い側を上にする)
+    pins: sym[0]==='N'? [P('G',-2,1,-4,1,-1,0), P('D',1,-2,1,-4,0,-1), P('S',1,2,1,4,0,1)]
+                      : [P('G',-2,-1,-4,-1,-1,0), P('S',1,-2,1,-4,0,-1), P('D',1,2,1,4,0,1)],
+    body:{x0:-10, x1:12, y0:-15, y1:15}, label:{x:18, y:0, anchor:'start'}, rect:{x0:-5, x1:2, y0:-7, y1:7}};
+  if(sym==='OPAMP') return {
+    pins:[P('+',-3,-1,-5,-1,-1,0), P('-',-3,1,-5,1,-1,0), P('OUT',3,0,5,0,1,0), P('V+',-1,-2,-1,-4,0,-1), P('V-',-1,2,-1,4,0,1)],
+    body:{x0:-30, x1:30, y0:-30, y1:30}, label:{x:14, y:-30, anchor:'start'}, rect:{x0:-6, x1:6, y0:-7, y1:7}};
+  if(sym==='NOT') return {
+    pins:[P('A',-3,0,-5,0,-1,0), P('Y',3,0,5,0,1,0)],
+    body:{x0:-16, x1:22, y0:-13, y1:13}, label:{x:0, y:-20, anchor:'middle'}, rect:{x0:-6, x1:6, y0:-6, y1:4}};
+  if(isGate(sym)) return {
+    pins:[P('A',-3,-1,-5,-1,-1,0), P('B',-3,1,-5,1,-1,0), P('Y',3,0,5,0,1,0)],
+    body:{x0:-28, x1:24, y0:-16, y1:16}, label:{x:0, y:-22, anchor:'middle'}, rect:{x0:-6, x1:6, y0:-7, y1:5}};
+  return null;
+}
+// オペアンプ・ゲートの入力で、隣り合う 2 本のピンがどちらも電源・GND に直結しているとき、
+// 下のピンの電源記号を 2 単位外へずらして、記号どうしが詰まらないようにする(戻り値: ずらす単位数)
+function powerStagger(I, pins, q, netOf){
+  if(!pins || isMOS(I.def.sym) || q.dy!==0 || !netOf(I,q.p.name).power) return 0;
+  const ly=q.ly0??q.ly, lx=q.lx0??q.lx;
+  return pins.some(o=>o!==q && o.dy===0 && (o.lx0??o.lx)===lx && (o.ly0??o.ly)===ly-2 && netOf(I,o.p.name).power)? 2 : 0;
+}
+// 名前と値の文字の範囲(px、中心 0,0 からの相対)
+function fixLabelBox(sym, I){
+  const g=fixGeom(sym), lw=Math.max(textWidth(I.name,13), I.value? textWidth(I.value,12) : 0), v=!!I.value;
+  const {x,y,anchor}=g.label;
+  const x0= anchor==='middle'? x-lw/2 : x, x1=x0+lw;
+  if(isMOS(sym)) return {x0, x1, y0:y-16, y1:y+(v?16:4)};
+  // オペアンプ・ゲートは名前が上、値が下(値があるときは名前を 1 段上げる)
+  return {x0, x1, y0:y-(v?14:0)-12, y1:y+3};
+}
+
+/* =====================================================================
+   5. 配置
+   ===================================================================== */
+const ROW_UP=6, ROW_DN=3;           // 行の帯(格子単位): 中心線から上 6、下 3
+
+function rectHit(a,b,m){ return a.x0 < b.x1+m && b.x0 < a.x1+m && a.y0 < b.y1+m && b.y0 < a.y1+m; }
+
+function elHalf(I){
+  const lw=Math.max(textWidth(I.name,12), I.value? textWidth(I.value,12) : 0);
+  const byLabel=Math.ceil((lw+12)/2/U);       // 隣の部品の文字と重ならない幅
+  if(I.def.sym!=='PART') return Math.max(3, byLabel);
+  const w=Math.max(textWidth(I.type,12), 20)+12;
+  return Math.max(3, Math.ceil(w/2/U)+1, byLabel);
+}
+
+function buildBox(I, A, opts){
+  const def=I.def, part=def.part;
+  const used=p=>{ const n=A.netOf(I,p.name); return n.pins.length>1 || n.names.length>0; };
+  const side=s=>{
+    const arr=part.sides[s].filter(p=>p===null || opts.allPins || used(p));
+    const out=[...arr];
+    while(out.length && out[out.length-1]===null) out.pop();
+    return out;
+  };
+  const L=side('left'), R=side('right'), T=side('top'), B=side('bottom');
+  const nameW=arr=>Math.max(0,...arr.filter(p=>p).map(p=>textWidth(p.name,12)));
+  const titleW=Math.max(textWidth(I.name,13), textWidth(part.label||I.type,12), I.value? textWidth(I.value,12) : 0);
+  const pitchTB=Math.max(2, Math.ceil((Math.max(nameW(T),nameW(B))+8)/U));
+  const topX=T.length?2:0, botX=B.length?2:0;
+  const nLR=Math.max(L.length,R.length);
+  let h=Math.max(6, 2*(nLR+1)+topX+botX, topX+botX+(I.value? 7 : 5));
+  let w=Math.max(8, Math.ceil((2*Math.max(nameW(L),nameW(R))+titleW+30)/U), pitchTB*(Math.max(T.length,B.length)+1));
+  if(w%2) w++; if(h%2) h++;
+  const pins=[];
+  L.forEach((p,i)=>{ if(p) pins.push({p, side:'left', ex:0, ey:topX+2*(i+1), dx:-1, dy:0}); });
+  R.forEach((p,i)=>{ if(p) pins.push({p, side:'right', ex:w, ey:topX+2*(i+1), dx:1, dy:0}); });
+  const tb=(arr, ey, dy, s)=>{ const span=pitchTB*(arr.length-1), x0=Math.round((w-span)/2); arr.forEach((p,i)=>{ if(p) pins.push({p, side:s, ex:x0+pitchTB*i, ey, dx:0, dy}); }); };
+  tb(T, 0, -1, 'top'); tb(B, h, 1, 'bottom');
+  return {kind:'box', inst:I, w, h, pins, x:0, y:0};
+}
+
+function layout(model, A, opts){
+  const comps=[], slots=[];
+  const pos=new Map();   // 'inst.pin' -> {x,y}  配置済みの端子
+  const boxes=model.insts.filter(I=>I.kind!=='el');
+  const usedCount=I=>I.def.pins.filter(p=>{ const n=A.netOf(I,p.name); return n.pins.length>1||n.names.length; }).length;
+  let main=null;
+  for(const I of boxes) if(!main || usedCount(I)>usedCount(main)) main=I;
+  const isBoxPin=it=>it && it.k==='pin' && it.inst.kind!=='el';
+
+  // ---- 箱(と トランジスタ)の形 ----
+  const shapeOf=new Map();
+  for(const I of boxes){
+    if(I.kind==='tr') shapeOf.set(I, {kind:'tr', inst:I, x:0, y:0, pins:[
+      {p:{name:'B'}, ex:-2, ey:0, lx:-4, ly:0, dx:-1, dy:0},
+      {p:{name:'C'}, ex:1, ey:-2, lx:1, ly:-4, dx:0, dy:-1},
+      {p:{name:'E'}, ex:1, ey:2, lx:1, ly:4, dx:0, dy:1}]});
+    if(I.def.sym==='POT') shapeOf.get(I).pins=[
+      {p:{name:'1'}, ex:-2, ey:0, lx:-4, ly:0, dx:-1, dy:0},
+      {p:{name:'2'}, ex:0, ey:-2, lx:0, ly:-4, dx:0, dy:-1},
+      {p:{name:'3'}, ex:2, ey:0, lx:4, ly:0, dx:1, dy:0}];
+    const fg=fixGeom(I.def.sym);
+    if(fg){
+      const opt=OPTIONAL_PINS[I.def.sym]||[];
+      const used=nm=>{ const n=A.netOf(I,nm); return n.pins.length>1 || n.names.length>0; };
+      shapeOf.set(I, {kind:'tr', inst:I, x:0, y:0, fix:fg, pins:fg.pins.filter(q=>!opt.includes(q.p.name) || opts.allPins || used(q.p.name))});
+    }
+    if(I.kind!=='tr') shapeOf.set(I, buildBox(I, A, opts));
+  }
+  const pwrExt=(sh, side)=>{
+    let e=0;
+    for(const q of sh.pins){ if(sh.kind==='box' && q.side!==side) continue; const n=A.netOf(sh.inst,q.p.name); if(n.power) e=Math.max(e, n.power==='GND'? 2 : 2+Math.ceil(textWidth(n.power,12)/U)); }
+    return e;
+  };
+  function boxRect(sh){
+    if(sh.fix){
+      const lb=fixLabelBox(sh.inst.def.sym, sh.inst), r=sh.fix.rect;
+      const rc={x0:sh.x+Math.min(r.x0, Math.floor(lb.x0/U)-1), x1:sh.x+Math.max(r.x1, Math.ceil(lb.x1/U)+1), y0:sh.y+Math.min(r.y0, Math.floor(lb.y0/U)-1), y1:sh.y+Math.max(r.y1, Math.ceil(lb.y1/U)+1)};
+      // 電源記号の場所
+      for(const q of sh.pins){
+        const n=A.netOf(sh.inst,q.p.name); if(!n.power) continue;
+        const e= n.power==='GND'? 2 : 2+Math.ceil(textWidth(n.power,12)/U);
+        const st=powerStagger(sh.inst, sh.pins, q, A.netOf);
+        const px=sh.x+(q.lx0??q.lx)+q.dx*(e+1+st), py=sh.y+(q.ly0??q.ly)+q.dy*(e+1);
+        const gnd= n.power==='GND' && q.dy===0 ? 3 : 0;   // 横向きの接地は 1 単位出して下へ曲げる
+        rc.x0=Math.min(rc.x0, px); rc.x1=Math.max(rc.x1, px); rc.y0=Math.min(rc.y0, py-1); rc.y1=Math.max(rc.y1, py+1+gnd);
+      }
+      return rc;
+    }
+    if(sh.kind==='tr' && sh.inst.def.sym==='POT'){
+      const lw=Math.ceil(Math.max(textWidth(sh.inst.name,13), textWidth(sh.inst.value||'',12))/2/U);
+      return {x0:sh.x-5-Math.max(0,lw-4), x1:sh.x+5+Math.max(0,lw-4), y0:sh.y-7, y1:sh.y+6};
+    }
+    if(sh.kind==='tr'){
+      const lw=Math.ceil(Math.max(textWidth(sh.inst.name,13), textWidth(sh.inst.value||'',12))/U);
+      return {x0:sh.x-5, x1:sh.x+4+lw, y0:sh.y-7, y1:sh.y+7};
+    }
+    return {x0:sh.x-2-pwrExt(sh,'left')-1, x1:sh.x+sh.w+2+pwrExt(sh,'right')+1, y0:sh.y-2-pwrExt(sh,'top')-1, y1:sh.y+sh.h+2+pwrExt(sh,'bottom')+1};
+  }
+  function placeShape(sh, x, y){
+    sh.x=x; sh.y=y;
+    for(const q of sh.pins){
+      if(sh.kind==='box'){ q.ax=x+q.ex; q.ay=y+q.ey; q.lx=q.ax+2*q.dx; q.ly=q.ay+2*q.dy; }
+      else { q.ax=x+q.ex; q.ay=y+q.ey; q.lx=x+(q.lx0??(q.lx0=q.lx)); q.ly=y+(q.ly0??(q.ly0=q.ly)); }
+      pos.set(sh.inst.name+'.'+q.p.name, {x:q.lx, y:q.ly});
+    }
+    sh.slot=boxRect(sh); slots.push(sh.slot); comps.push(sh);
+  }
+
+  // ---- 行(2 端子の部品の連鎖) ----
+  const rows=[];
+  const inRow=new Set();
+  for(const ch of model.chains){
+    const els=ch.items.filter(it=>it.k==='el');
+    if(!els.length) continue;
+    const first=ch.items[0], last=ch.items[ch.items.length-1];
+    const row={els:els.map(it=>({inst:it.inst, flip:false})), line:ch.line, start:first, end:last};
+    // 箱のピンで終わる連鎖は、そのピンから始まる向きにそろえる(部品の向きは flip で保つ)
+    if(!isBoxPin(first) && isBoxPin(last)){ row.els.reverse(); row.els.forEach(e=>e.flip=true); row.start=last; row.end=first; }
+    for(const e of row.els) inRow.add(e.inst);
+    rows.push(row);
+  }
+  // 連鎖に入っていない部品: 端子が電源につながっていれば、その電源記号の場所も確保する
+  const pwrItem=(I,p)=>{ const n=A.netOf(I,p); return n.power? {k:'net', name:n.power} : null; };
+  for(const I of model.insts) if(I.kind==='el' && !inRow.has(I)) rows.push({els:[{inst:I, flip:false}], orphan:true, start:pwrItem(I,I.def.pins[0].name), end:pwrItem(I,I.def.pins[1].name)});
+  for(const r of rows){ for(const e of r.els) e.hl=elHalf(e.inst); r.len=r.els.reduce((a,e)=>a+2*e.hl,0); }
+
+  const itemPower=it=>{ if(!it) return null; const n= it.k==='pin'? A.netOf(it.inst,it.pin) : it.k==='net'? A.nets.find(z=>z.names.includes(it.name)) : null; return n&&n.power? n.power : null; };
+  const powExt=(it, vert)=>{ const p=itemPower(it); if(!p) return 1; if(p==='GND') return vert? 3 : 2; return vert? 4 : 3+Math.ceil(textWidth(p,12)/U); };
+  // 行の占める範囲(格子単位)。横の行はラベルが上、縦の行はラベルが右
+  function rowRect(r, sx, sy, dx, dy){
+    const ex=sx+dx*r.len, ey=sy+dy*r.len;
+    if(dy===0){
+      let lab=0;
+      for(const e of r.els){ const w=Math.max(textWidth(e.inst.name,12), textWidth(e.inst.value||'',12)); lab=Math.max(lab, Math.ceil(w/2/U)-e.hl+1); }
+      const eS=powExt(r.start,false), eE=powExt(r.end,false);
+      const extL= dx>0? eS : eE, extR= dx>0? eE : eS;
+      return {x0:Math.min(sx,ex)-extL-lab, x1:Math.max(sx,ex)+extR+lab, y0:sy-ROW_UP, y1:sy+ROW_DN};
+    }
+    let lw=0, h=0;
+    for(const e of r.els){ lw=Math.max(lw, textWidth(e.inst.name,12), textWidth(e.inst.value||'',12)); h=Math.max(h, SYM_H[e.inst.def.sym]||9); }
+    const eS=powExt(r.start,true), eE=powExt(r.end,true);
+    const extT= dy>0? eS : eE, extB= dy>0? eE : eS;
+    return {x0:sx-2, x1:sx+Math.ceil((h+8+lw)/U)+1, y0:Math.min(sy,ey)-extT, y1:Math.max(sy,ey)+extB};
+  }
+  function fixRow(r, sx, sy, dx, dy){
+    Object.assign(r, {sx, sy, dx, dy, vert:dy!==0, ex:sx+dx*r.len, ey:sy+dy*r.len, placed:true});
+    let acc=0;
+    for(const e of r.els){
+      const cx=sx+dx*(acc+e.hl), cy=sy+dy*(acc+e.hl);
+      // terms[0] は左(縦なら上)の端子。flip なら pins[1] が左(上)
+      const flip=(dx<0||dy<0)? !e.flip : e.flip;
+      const comp={kind:'el', inst:e.inst, cx, cy, hl:e.hl, flip, vert:dy!==0, row:r};
+      const [p0,p1]=e.inst.def.pins.map(p=>p.name);
+      const a= dy===0? {x:cx-e.hl, y:cy} : {x:cx, y:cy-e.hl};
+      const b= dy===0? {x:cx+e.hl, y:cy} : {x:cx, y:cy+e.hl};
+      comp.terms=[{pin:flip?p1:p0, x:a.x, y:a.y}, {pin:flip?p0:p1, x:b.x, y:b.y}];
+      for(const t of comp.terms) pos.set(e.inst.name+'.'+t.pin, {x:t.x, y:t.y});
+      comps.push(comp); e.comp=comp;
+      acc+=2*e.hl;
+    }
+    r.slot=rowRect(r, sx, sy, dx, dy); slots.push(r.slot);
+  }
+  const free=(rc, except)=>!slots.some(s=>s!==except && rectHit(rc,s,1));
+  const seqDown=(y)=>{ const a=[]; for(let k=0;k<400;k++) a.push(y+k); return a; };
+  const seqBoth=(y, upFirst)=>{ const a=[y]; for(let k=1;k<300;k++){ if(upFirst) a.push(y-k, y+k); else a.push(y+k, y-k); } return a; };
+  function placeH(r, sx, dx, ys){
+    for(const y of ys) if(free(rowRect(r,sx,y,dx,0))){ fixRow(r,sx,y,dx,0); return; }
+    fixRow(r, sx, Math.max(0,...slots.map(s=>s.y1))+ROW_UP+2, dx, 0);
+  }
+  // 置いた箱のピンから始まる行: 左右のピンなら箱の横に横向き、上下のピンならピンの真上・真下に縦向き
+  function placeAttached(sh){
+    const mine=rows.filter(r=>!r.placed && r.start && r.start.k==='pin' && r.start.inst===sh.inst && !itemPower(r.start));
+    const q0=r=>sh.pins.find(z=>z.p.name===r.start.pin);
+    mine.sort((a,b)=>(q0(a)?.ly??0)-(q0(b)?.ly??0) || (q0(a)?.lx??0)-(q0(b)?.lx??0));
+    for(const r of mine){
+      const q=q0(r), brc=sh.slot;
+      if(!q) continue;
+      if(q.dy!==0 && !(q.dy<0 && itemPower(r.end)==='GND')){
+        const sx=q.lx, sy=q.ly+2*q.dy;
+        if(free(rowRect(r,sx,sy,0,q.dy), brc)){ fixRow(r,sx,sy,0,q.dy); continue; }
+        placeH(r, brc.x1+3, 1, seqDown(q.ly));
+      } else if(q.dy!==0) placeH(r, brc.x1+3, 1, seqDown(q.ly));
+      else placeH(r, q.dx>0? brc.x1+3 : brc.x0-3, q.dx, seqDown(q.ly));
+    }
+  }
+
+  let rx0=0, yTop=0;
+  if(main){
+    const sh=shapeOf.get(main);
+    placeShape(sh, 0, 0);
+    rx0=sh.slot.x1+3; yTop=sh.slot.y0+ROW_UP;
+    placeAttached(sh);
+  }
+  // 箱のピンから始まらない連鎖
+  let lastY=yTop;
+  for(const r of rows){
+    if(r.orphan || r.placed || (isBoxPin(r.start) && !itemPower(r.start))) continue;
+    placeH(r, rx0, 1, seqDown(lastY)); lastY=r.sy;
+  }
+  // 連鎖に入っていない 2 端子の部品: つながる先の近くに置く
+  for(const r of rows){
+    if(!r.orphan) continue;
+    const I=r.els[0].inst;
+    const pts=[], rowsHit=new Set();
+    for(const p of I.def.pins){
+      const n=A.netOf(I,p.name);
+      for(const q of n.pins){ if(q.inst===I.name) continue; const ps=pos.get(q.inst+'.'+q.pin); if(ps){ pts.push(ps); const cc=comps.find(z=>z.kind==='el'&&z.inst.name===q.inst); if(cc) rowsHit.add(cc.row); } }
+    }
+    if(!pts.length){ placeH(r, rx0, 1, seqDown(Math.max(yTop, ...slots.map(s=>s.y1+ROW_UP+1)))); continue; }
+    const mx=pts.reduce((a,p)=>a+p.x,0)/pts.length, my=pts.reduce((a,p)=>a+p.y,0)/pts.length;
+    const source=['BAT','AC'].includes(I.def.sym);
+    const hit=[...rowsHit];
+    const near= hit.length===1 && !hit[0].vert ? hit[0].sy : Math.round(my);
+    placeH(r, Math.round(mx-r.len/2), 1, seqBoth(near+(source?1:-1)*(ROW_UP+ROW_DN+1), !source));
+  }
+  // 残りの箱: 右の列
+  const colX=Math.max(rx0, ...slots.map(s=>s.x1))+6;
+  let colY= main? Math.min(...slots.map(s=>s.y0)) : 0;
+  for(const I of boxes){
+    if(I===main) continue;
+    const sh=shapeOf.get(I);
+    let want=null;
+    for(const q of sh.pins){
+      const n=A.netOf(I,q.p.name);
+      if(n.power) continue;
+      for(const o of n.pins){ if(o.inst===I.name) continue; const ps=pos.get(o.inst+'.'+o.pin); if(ps){ want=ps.y-(sh.kind==='box'? q.ey : q.ly0??q.ly); break; } }
+      if(want!==null) break;
+    }
+    let lext= sh.kind==='box'? 3+pwrExt(sh,'left') : 6;
+    if(sh.fix){ sh.x=0; sh.y=0; lext=Math.max(lext, 1-boxRect(sh).x0); }
+    const x=colX+lext;
+    const ys=seqDown(want===null? colY : Math.max(want, Math.min(...slots.map(s=>s.y0))));
+    let placed=false;
+    for(const y of ys){ sh.x=x; sh.y=y; if(free(boxRect(sh))){ placeShape(sh,x,y); placed=true; break; } }
+    if(!placed) placeShape(sh, x, Math.max(...slots.map(s=>s.y1))+4);
+    colY=sh.slot.y1+2;
+    placeAttached(sh);
+  }
+  for(const r of rows) if(!r.placed) placeH(r, rx0, 1, seqDown(Math.max(0,...slots.map(s=>s.y1))+ROW_UP+2));
+
+  // ---- 配置ヒント(place A below B など): A を含むまとまり(連鎖の行、または箱)を B の隣へ動かす ----
+  const warns=[];
+  const unitOf=name=>{
+    const c=comps.find(z=>z.inst && z.inst.name===name);
+    if(!c) return null;
+    return c.kind==='el' ? {kind:'row', r:c.row, slot:c.row.slot} : {kind:'shape', sh:c, slot:c.slot};
+  };
+  const shiftRect=(rc,dx,dy)=>{ rc.x0+=dx; rc.x1+=dx; rc.y0+=dy; rc.y1+=dy; };
+  const moveUnit=(u,dx,dy)=>{
+    if(!dx && !dy) return;
+    if(u.kind==='row'){
+      const r=u.r; r.sx+=dx; r.sy+=dy; r.ex+=dx; r.ey+=dy;
+      for(const e of r.els){ const c=e.comp; c.cx+=dx; c.cy+=dy; for(const t of c.terms){ t.x+=dx; t.y+=dy; } }
+    } else {
+      const sh=u.sh; sh.x+=dx; sh.y+=dy;
+      for(const q of sh.pins){ q.ax+=dx; q.ay+=dy; q.lx+=dx; q.ly+=dy; }
+    }
+    shiftRect(u.slot,dx,dy);
+  };
+  for(const P of (model.places||[])){
+    const ua=unitOf(P.a), ub=unitOf(P.b);
+    if(!ua || !ub) continue;
+    if(ua.slot===ub.slot){ warns.push(`${P.line} 行目の place: ${P.a} と ${P.b} は同じ連鎖にあるので、離して置けません`); continue; }
+    const ra=ua.slot, rb=ub.slot;
+    const cxA=(ra.x0+ra.x1)/2, cyA=(ra.y0+ra.y1)/2, cxB=(rb.x0+rb.x1)/2, cyB=(rb.y0+rb.y1)/2;
+    let dx=0, dy=0, sx=0, sy=0;
+    if(P.dir==='below'){ dy=rb.y1-ra.y0+1; dx=Math.round(cxB-cxA); sy=1; }
+    if(P.dir==='above'){ dy=rb.y0-ra.y1-1; dx=Math.round(cxB-cxA); sy=-1; }
+    if(P.dir==='right'){ dx=rb.x1-ra.x0+1; dy=Math.round(cyB-cyA); sx=1; }
+    if(P.dir==='left'){ dx=rb.x0-ra.x1-1; dy=Math.round(cyB-cyA); sx=-1; }
+    const others=slots.filter(z=>z!==ra);
+    let k=0;
+    const hit=()=>{ const t={x0:ra.x0+dx, x1:ra.x1+dx, y0:ra.y0+dy, y1:ra.y1+dy}; return others.some(z=>rectHit(t,z,1)); };
+    while(hit() && k<500){ dx+=sx; dy+=sy; k++; }
+    moveUnit(ua,dx,dy);
+  }
+  return {comps, rows, warns};
+}
+
+/* =====================================================================
+   6. 配線(格子上の経路探索)
+   ===================================================================== */
+function route(L, A, model){
+  const comps=L.comps;
+  // ---- 端子・引き出し線・電源記号を集める ----
+  const termsOf=new Map();   // net -> Map(key -> {x,y})
+  const pre=[];              // 先に引く線 {net, a:[x,y], b:[x,y]}
+  const owned=[];            // {x,y,net,noJoin}
+  const pwr=[];
+  const keep=[];             // 端子の先の点 {x,y,net}: ほかの接続は通らない
+  const blocks=[];           // 記号の範囲(px) {x0,y0,x1,y1}
+  const labels=[];           // 文字 {x,y,text,size,anchor,weight,base}
+  const addTerm=(n,x,y)=>{ if(!termsOf.has(n)) termsOf.set(n,new Map()); termsOf.get(n).set(x+','+y,{x,y}); };
+  const net=(I,p)=>A.netOf(I,p);
+  for(const c of comps){
+    if(c.kind==='el'){
+      const I=c.inst, h=SYM_H[I.def.sym]||9;
+      const lw=Math.max(textWidth(I.name,12), I.value? textWidth(I.value,12):0);
+      if(!c.vert){
+        blocks.push({x0:(c.cx-c.hl+1)*U, x1:(c.cx+c.hl-1)*U, y0:c.cy*U-h, y1:c.cy*U+h});
+        // ラベル: 名前と値を記号の上に 2 段で
+        const vy=c.cy*U-h-6, ny= I.value? vy-14 : vy;
+        labels.push({x:c.cx*U, y:ny, text:I.name, anchor:'middle', owner:c});
+        if(I.value) labels.push({x:c.cx*U, y:vy, text:I.value, anchor:'middle', owner:c});
+        blocks.push({x0:c.cx*U-lw/2, x1:c.cx*U+lw/2, y0:ny-11, y1:vy+3});
+      } else {
+        blocks.push({x0:c.cx*U-h, x1:c.cx*U+h, y0:(c.cy-c.hl+1)*U, y1:(c.cy+c.hl-1)*U});
+        // ラベル: 名前と値を記号の右に 2 段で
+        const lx=c.cx*U+h+6, ny= I.value? c.cy*U-3 : c.cy*U+4;
+        labels.push({x:lx, y:ny, text:I.name, anchor:'start', owner:c});
+        if(I.value) labels.push({x:lx, y:ny+14, text:I.value, anchor:'start', owner:c});
+        blocks.push({x0:lx, x1:lx+lw, y0:ny-11, y1:ny+(I.value?17:3)});
+      }
+      const r=c.row;
+      c.terms.forEach((t,i)=>{
+        const n=net(I,t.pin);
+        const inner= c.vert? [t.x, t.y+(i===0?1:-1)] : [t.x+(i===0?1:-1), t.y];
+        pre.push({net:n, a:[t.x,t.y], b:inner});
+        owned.push({x:t.x,y:t.y,net:n});
+        if(n.power){
+          const atStart=(t.x===r.sx && t.y===r.sy), atEnd=(t.x===r.ex && t.y===r.ey);
+          let dir;
+          if(!r.vert) dir= n.power==='GND'? [0,1] : atStart? [-r.dx,0] : atEnd? [r.dx,0] : [0,1];   // 途中の電源は下向き(上には部品の名前と値がある)
+          else dir= atStart? [0,-r.dy] : atEnd? [0,r.dy] : [1,0];
+          const key='pw:'+t.x+','+t.y;
+          if(!pwr.some(p=>p.key===key)) pwr.push({key, net:n, x:t.x, y:t.y, dir});
+        } else addTerm(n, t.x, t.y);
+        const atRowEnd=(t.x===r.sx && t.y===r.sy)||(t.x===r.ex && t.y===r.ey);
+        if(atRowEnd && !n.power) keep.push({x:2*t.x-inner[0], y:2*t.y-inner[1], net:n});
+      });
+    } else {
+      for(const q of c.pins){
+        const n=net(c.inst,q.p.name);
+        // 引き出し線: 本体の辺(ax,ay)から端(lx,ly)まで
+        const steps=Math.abs(q.lx-q.ax)+Math.abs(q.ly-q.ay);
+        for(let k=0;k<steps;k++){ const a=[q.ax+q.dx*k, q.ay+q.dy*k], b=[q.ax+q.dx*(k+1), q.ay+q.dy*(k+1)]; pre.push({net:n,a,b}); if(k>0) owned.push({x:a[0],y:a[1],net:n,noJoin:true}); }
+        owned.push({x:q.lx,y:q.ly,net:n});
+        if(!n.power) keep.push({x:q.lx+q.dx, y:q.ly+q.dy, net:n});
+        const st= c.fix? powerStagger(c.inst, c.pins, q, A.netOf) : 0;
+        for(let k=0;k<st;k++){ const a=[q.lx+q.dx*k, q.ly], b=[q.lx+q.dx*(k+1), q.ly]; pre.push({net:n,a,b}); owned.push({x:b[0],y:b[1],net:n,noJoin:true}); }
+        if(n.power) pwr.push({key:'pw:'+(q.lx+q.dx*st)+','+q.ly, net:n, x:q.lx+q.dx*st, y:q.ly, dir:[q.dx,q.dy], onBox:c.kind==='box' || (c.fix && !isMOS(c.inst.def.sym))});   // オペアンプ・ゲートの入力もピンの間隔が狭いので横向きのまま
+        else if(n.pins.length>1 || n.names.length) addTerm(n, q.lx, q.ly);
+      }
+      if(c.kind==='box'){
+        blocks.push({x0:c.x*U, x1:(c.x+c.w)*U, y0:c.y*U, y1:(c.y+c.h)*U});
+      } else if(c.fix){
+        const b=c.fix.body, lb=fixLabelBox(c.inst.def.sym, c.inst), ox=c.x*U, oy=c.y*U;
+        blocks.push({x0:ox+b.x0, x1:ox+b.x1, y0:oy+b.y0, y1:oy+b.y1});
+        blocks.push({x0:ox+lb.x0, x1:ox+lb.x1, y0:oy+lb.y0, y1:oy+lb.y1});
+      } else if(c.inst.def.sym==='POT'){
+        blocks.push({x0:(c.x-2)*U+1, x1:(c.x+2)*U-1, y0:(c.y-2)*U+1, y1:c.y*U+9});
+        const lw=Math.max(textWidth(c.inst.name,13), textWidth(c.inst.value||'',12));
+        blocks.push({x0:c.x*U-lw/2, x1:c.x*U+lw/2, y0:c.y*U+12, y1:c.y*U+(c.inst.value?42:28)});
+      } else {
+        blocks.push({x0:(c.x-2)*U-2, x1:(c.x+2)*U+2, y0:(c.y-2)*U-2, y1:(c.y+2)*U+2});
+        const lw=Math.max(textWidth(c.inst.name,13), textWidth(c.inst.value||'',12));
+        blocks.push({x0:(c.x+2)*U+6, x1:(c.x+2)*U+10+lw, y0:c.y*U-16, y1:c.y*U+(c.inst.value?16:4)});
+      }
+    }
+  }
+  // 電源記号: 引き出し 1 単位 + 記号
+  for(const p of pwr){
+    if(p.net.power==='GND' && p.dir[1]===0 && !p.onBox){
+      // 横向きの端子の接地は、1 単位出してから下へ曲げ、接地記号は下向きに描く(箱の左右のピンはピンの間隔が狭いので横向きのまま)
+      pre.push({net:p.net, a:[p.x,p.y], b:[p.x+p.dir[0], p.y]});
+      owned.push({x:p.x+p.dir[0], y:p.y, net:p.net, noJoin:true});
+      p.x+=p.dir[0]; p.dir=[0,1];
+    }
+    pre.push({net:p.net, a:[p.x,p.y], b:[p.x+p.dir[0], p.y+p.dir[1]]});
+    const nb=blocks.length;
+    const bx=(p.x+p.dir[0])*U, by=(p.y+p.dir[1])*U;
+    if(p.net.power==='GND'){
+      const len=8;
+      if(p.dir[0]===0) blocks.push({x0:bx-9, x1:bx+9, y0:Math.min(by, by+p.dir[1]*len), y1:Math.max(by, by+p.dir[1]*len)});
+      else blocks.push({x0:Math.min(bx, bx+p.dir[0]*len), x1:Math.max(bx, bx+p.dir[0]*len), y0:by-9, y1:by+9});
+    } else {
+      const tw=textWidth(p.net.power,12);
+      if(p.dir[0]===0) blocks.push({x0:bx-Math.max(8,tw/2), x1:bx+Math.max(8,tw/2), y0: p.dir[1]<0? by-18 : by, y1: p.dir[1]<0? by : by+18});
+      else blocks.push({x0: p.dir[0]<0? bx-tw-6 : bx, x1: p.dir[0]<0? bx : bx+tw+6, y0:by-8, y1:by+8});
+    }
+    const bk=blocks[nb];
+    if(p.dir[0]>0) bk.x1+=U; if(p.dir[0]<0) bk.x0-=U; if(p.dir[1]>0) bk.y1+=U; if(p.dir[1]<0) bk.y0-=U;
+    if(p.dir[0]===0){ bk.x0-=U; bk.x1+=U; } else { bk.y0-=U; bk.y1+=U; }
+  }
+
+  // ---- 格子 ----
+  let gx0=Infinity, gy0=Infinity, gx1=-Infinity, gy1=-Infinity;
+  const ext=(x,y)=>{ gx0=Math.min(gx0,x); gy0=Math.min(gy0,y); gx1=Math.max(gx1,x); gy1=Math.max(gy1,y); };
+  for(const b of blocks){ ext(Math.floor(b.x0/U), Math.floor(b.y0/U)); ext(Math.ceil(b.x1/U), Math.ceil(b.y1/U)); }
+  for(const p of pre){ ext(p.a[0],p.a[1]); ext(p.b[0],p.b[1]); }
+  if(gx0===Infinity){ gx0=gy0=0; gx1=gy1=10; }
+  gx0-=8; gy0-=8; gx1+=8; gy1+=8;
+  const W=gx1-gx0+1, H=gy1-gy0+1, N=W*H;
+  const id=(x,y)=>(y-gy0)*W+(x-gx0);
+  const blk=new Int32Array(N);         // 0 空き、-1 記号、k+1 接続 k のもの
+  const noJoin=new Uint8Array(N);
+  const eH=new Int32Array(N).fill(-1), eV=new Int32Array(N).fill(-1);   // (x,y)-(x+1,y) / (x,y)-(x,y+1)
+  const isPre=new Uint8Array(2*N);
+  for(const b of blocks){
+    for(let y=Math.ceil((b.y0-6)/U); y<=Math.floor((b.y1+6)/U); y++)
+      for(let x=Math.ceil((b.x0-6)/U); x<=Math.floor((b.x1+6)/U); x++) if(x>=gx0&&x<=gx1&&y>=gy0&&y<=gy1) blk[id(x,y)]=-1;
+  }
+  // 記号の範囲の中でも、端子・引き出し線の点は接続のもの
+  for(const o of owned){ blk[id(o.x,o.y)]=o.net.id+1; if(o.noJoin) noJoin[id(o.x,o.y)]=1; }
+  const ko=new Int32Array(N).fill(-1);
+  for(const k of keep){ if(k.x<gx0||k.x>gx1||k.y<gy0||k.y>gy1) continue; const i=id(k.x,k.y); if(blk[i]===0) ko[i]= (ko[i]===-1||ko[i]===k.net.id)? k.net.id : -2; }
+  const setEdge=(a,b,n,isP)=>{
+    if(a[1]===b[1]){ const x=Math.min(a[0],b[0]); eH[id(x,a[1])]=n; if(isP) isPre[2*id(x,a[1])]=1; }
+    else { const y=Math.min(a[1],b[1]); eV[id(a[0],y)]=n; if(isP) isPre[2*id(a[0],y)+1]=1; }
+  };
+  for(const p of pre) setEdge(p.a,p.b,p.net.id,true);
+
+  const DX=[1,0,-1,0], DY=[0,1,0,-1];
+  const edgeAt=(x,y,d)=>{ // d 方向の辺の持ち主
+    if(d===0) return x<gx1? eH[id(x,y)] : -2;
+    if(d===2) return x>gx0? eH[id(x-1,y)] : -2;
+    if(d===1) return y<gy1? eV[id(x,y)] : -2;
+    return y>gy0? eV[id(x,y-1)] : -2;
+  };
+  const netsAt=(x,y)=>{ const s=new Set(); for(let d=0;d<4;d++){ const e=edgeAt(x,y,d); if(e>=0) s.add(e); } return s; };
+  const degAt=(x,y,n)=>{ let k=0; for(let d=0;d<4;d++) if(edgeAt(x,y,d)===n) k++; return k; };
+
+  // ---- 1 本の接続を引く ----
+  const failed=[];
+  const routedEdges=new Map();
+  const order=[...termsOf.keys()].filter(n=>termsOf.get(n).size>1);
+  const span=n=>{ const t=[...termsOf.get(n).values()]; return Math.max(...t.map(p=>p.x))-Math.min(...t.map(p=>p.x))+Math.max(...t.map(p=>p.y))-Math.min(...t.map(p=>p.y)); };
+  order.sort((a,b)=>span(a)-span(b));
+  for(const n of order){
+    const nid=n.id;
+    const terms=[...termsOf.get(n).values()];
+    const inTree=new Uint8Array(N);
+    const mine=[];
+    const addTree=(x,y)=>{ inTree[id(x,y)]=1; };
+    addTree(terms[0].x, terms[0].y);
+    const rest=terms.slice(1);
+    let ok=true;
+    while(rest.length){
+      // 木に最も近い端子から
+      let bi=0, bd=Infinity;
+      const treePts=[]; for(let i=0;i<N;i++) if(inTree[i]) treePts.push(i);
+      rest.forEach((t,i)=>{ for(const p of treePts){ const x=p%W+gx0, y=Math.floor(p/W)+gy0, d=Math.abs(x-t.x)+Math.abs(y-t.y); if(d<bd){ bd=d; bi=i; } } });
+      const src=rest.splice(bi,1)[0];
+      const path=search(src, nid, inTree);
+      if(!path){ ok=false; break; }
+      for(let k=1;k<path.length;k++){ setEdge(path[k-1], path[k], nid, false); mine.push([path[k-1],path[k]]); }
+      for(const p of path) addTree(p[0],p[1]);
+    }
+    if(!ok){ for(const [a,b] of mine) setEdge(a,b,-1,false); failed.push(n); }
+    else routedEdges.set(n, mine);
+  }
+
+  function search(src, nid, inTree){
+    // 状態 = 点 × 来た向き。Dijkstra(二分ヒープ)
+    const S=N*4, dist=new Float64Array(S).fill(Infinity), prev=new Int32Array(S).fill(-1);
+    const heap=[]; const push=(c,s)=>{ heap.push([c,s]); let i=heap.length-1; while(i>0){ const j=(i-1)>>1; if(heap[j][0]<=heap[i][0]) break; [heap[i],heap[j]]=[heap[j],heap[i]]; i=j; } };
+    const pop=()=>{ const top=heap[0], last=heap.pop(); if(heap.length){ heap[0]=last; let i=0; for(;;){ const l=2*i+1, r=l+1; let m=i; if(l<heap.length&&heap[l][0]<heap[m][0]) m=l; if(r<heap.length&&heap[r][0]<heap[m][0]) m=r; if(m===i) break; [heap[i],heap[m]]=[heap[m],heap[i]]; i=m; } } return top; };
+    const crossing=(x,y,d)=>{ // (x,y) に他の接続がある: まっすぐ直交に横切れるときだけ true
+      const others=[...netsAt(x,y)].filter(m=>m!==nid);
+      if(!others.length) return 0;
+      if(others.length>1) return -1;
+      const m=others[0];
+      const along=(edgeAt(x,y,d)===m)||(edgeAt(x,y,(d+2)%4)===m);
+      const perp=(edgeAt(x,y,(d+1)%4)===m)&&(edgeAt(x,y,(d+3)%4)===m);
+      return (!along && perp)? 1 : -1;
+    };
+    const canEnter=(x,y,d)=>{ // (x,y) から d へ動けるか。戻り値: -1 不可、0 通常、1 横切り、2 到着
+      const nx=x+DX[d], ny=y+DY[d];
+      if(nx<gx0||nx>gx1||ny<gy0||ny>gy1) return -1;
+      const e=edgeAt(x,y,d); if(e!==-1 && e!==nid) return -1;
+      const q=id(nx,ny), b=blk[q];
+      if(b===-1) return -1;
+      if(b>0 && b!==nid+1) return -1;
+      if(ko[q]!==-1 && ko[q]!==nid) return -1;
+      if(inTree[q]){
+        if(noJoin[q]) return -1;
+        if(degAt(nx,ny,nid)>=3) return -1;
+        if([...netsAt(nx,ny)].some(m=>m!==nid)) return -1;
+        return 2;
+      }
+      if(b===nid+1) return -1;          // まだつないでいない自分の端子・引き出し線は通らない
+      const cr=crossing(nx,ny,d);
+      if(cr<0) return -1;
+      if(e===nid) return -1;
+      return cr;
+    };
+    const s0=id(src.x,src.y);
+    for(let d=0;d<4;d++){
+      const r=canEnter(src.x,src.y,d); if(r<0) continue;
+      const q=id(src.x+DX[d], src.y+DY[d]), st=q*4+d, c=1+(r===1?4:0);
+      if(c<dist[st]){ dist[st]=c; prev[st]=-2-s0; push(c,st); }
+    }
+    while(heap.length){
+      const [c,st]=pop();
+      if(c>dist[st]) continue;
+      const p=st>>2, d=st&3, x=p%W+gx0, y=Math.floor(p/W)+gy0;
+      if(inTree[p]){
+        // 経路を復元
+        const path=[[x,y]]; let s=st;
+        while(prev[s]>=0){ s=prev[s]; const pp=s>>2; path.push([pp%W+gx0, Math.floor(pp/W)+gy0]); }
+        path.push([src.x,src.y]);
+        return path.reverse();
+      }
+      const crossHere=[...netsAt(x,y)].some(m=>m!==nid);
+      for(let nd=0;nd<4;nd++){
+        if(nd===(d+2)%4) continue;
+        if(crossHere && nd!==d) continue;
+        const r=canEnter(x,y,nd); if(r<0) continue;
+        const q=id(x+DX[nd], y+DY[nd]), ns=q*4+nd;
+        const nc=c+1+(nd!==d?3:0)+(r===1?4:0);
+        if(nc<dist[ns]){ dist[ns]=nc; prev[ns]=st; push(nc,ns); }
+      }
+    }
+    return null;
+  }
+
+  // ---- 線・接続点(黒丸) ----
+  const wires=[], dots=[];
+  const nets=new Map();
+  for(let i=0;i<N;i++){
+    const x=i%W+gx0, y=Math.floor(i/W)+gy0;
+    if(eH[i]>=0){ if(!nets.has(eH[i])) nets.set(eH[i],[]); nets.get(eH[i]).push([x,y,x+1,y]); }
+    if(eV[i]>=0){ if(!nets.has(eV[i])) nets.set(eV[i],[]); nets.get(eV[i]).push([x,y,x,y+1]); }
+  }
+  for(const [n,es] of nets){
+    // 水平・垂直ごとにつながった辺をまとめる
+    const hs=es.filter(e=>e[1]===e[3]).sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
+    const vs=es.filter(e=>e[0]===e[2]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+    let cur=null;
+    for(const e of hs){ if(cur && cur[1]===e[1] && cur[2]===e[0]) cur[2]=e[2]; else { if(cur) wires.push(cur); cur=[...e]; } }
+    if(cur) wires.push(cur); cur=null;
+    for(const e of vs){ if(cur && cur[0]===e[0] && cur[3]===e[1]) cur[3]=e[3]; else { if(cur) wires.push(cur); cur=[...e]; } }
+    if(cur) wires.push(cur);
+    const deg=new Map();
+    for(const e of es){ for(const k of [e[0]+','+e[1], e[2]+','+e[3]]) deg.set(k,(deg.get(k)||0)+1); }
+    for(const [k,v] of deg) if(v>=3){ const [x,y]=k.split(',').map(Number); dots.push([x,y]); }
+  }
+  // 引けなかった接続は名前のラベルでつなぐ
+  const netLabels=[];
+  for(const n of failed){
+    for(const t of termsOf.get(n).values()){
+      // 端子の外向き: 空いている向き
+      let dir=[0,1];
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const e=edgeAt(t.x,t.y,dx===1?0:dx===-1?2:dy===1?1:3); if(e===-1){ dir=[dx,dy]; break; } }
+      netLabels.push({x:t.x, y:t.y, dir, text:n.display||'?'});
+    }
+  }
+  // 自己検査
+  const issues=[];
+  for(const [n,es] of routedEdges){
+    const terms=[...termsOf.get(n).values()];
+    const adj=new Map(); const link=(a,b)=>{ if(!adj.has(a)) adj.set(a,[]); adj.get(a).push(b); };
+    for(const e of nets.get(n.id)||[]){ const a=e[0]+','+e[1], b=e[2]+','+e[3]; link(a,b); link(b,a); }
+    const seen=new Set([terms[0].x+','+terms[0].y]); const st=[...seen];
+    while(st.length){ const k=st.pop(); for(const m of adj.get(k)||[]) if(!seen.has(m)){ seen.add(m); st.push(m); } }
+    for(const t of terms) if(!seen.has(t.x+','+t.y)) issues.push(`接続 ${n.display} の端子 (${t.x},${t.y}) がつながっていない`);
+  }
+  for(let i=0;i<N;i++){
+    const x=i%W+gx0, y=Math.floor(i/W)+gy0;
+    const ns=netsAt(x,y);
+    if(ns.size>1){
+      if(ns.size>2) issues.push(`(${x},${y}) に 3 本以上の接続が重なっている`);
+      for(const m of ns){ const h=(edgeAt(x,y,0)===m)+(edgeAt(x,y,2)===m), v=(edgeAt(x,y,1)===m)+(edgeAt(x,y,3)===m); if(!((h===2&&v===0)||(h===0&&v===2))) issues.push(`(${x},${y}) で接続が直交に横切っていない`); }
+    }
+    if(blk[i]===-1){
+      for(const [d,arr,j] of [[0,eH,i],[1,eV,i]]) if(arr[j]>=0 && !isPre[2*j+d]) issues.push(`線が記号の範囲 (${x},${y}) を通る`);
+      if(x>gx0 && eH[i-1]>=0 && !isPre[2*(i-1)]) issues.push(`線が記号の範囲 (${x},${y}) を通る`);
+      if(y>gy0 && eV[i-W]>=0 && !isPre[2*(i-W)+1]) issues.push(`線が記号の範囲 (${x},${y}) を通る`);
+    }
+  }
+  return {wires, dots, pwr, labels, netLabels, failed, issues:[...new Set(issues)], bounds:{x0:gx0+6,y0:gy0+6,x1:gx1-6,y1:gy1-6}};
+}
+
+/* =====================================================================
+   7. SVG 描画
+   ===================================================================== */
+const SVG_NS='http://www.w3.org/2000/svg';
+function el(tag, attrs, parent){ const e=document.createElementNS(SVG_NS, tag); for(const k in attrs) e.setAttribute(k, attrs[k]); if(parent) parent.appendChild(e); return e; }
+function txt(parent, x, y, s, attrs){ const t=el('text', Object.assign({x, y}, attrs||{}), parent); t.textContent=s; return t; }
+
+const SVG_STYLE=`.shape{fill:#fff;stroke:#000;stroke-width:1.5}.ln{fill:none;stroke:#000;stroke-width:1.5}.thick{fill:none;stroke:#000;stroke-width:4}.fill{fill:#000;stroke:none}.lbl{font-size:12px}.pin{font-size:12px}.ttl{font-size:13px;font-weight:600}.net{font-size:12px;fill:#000}.frame{fill:none;stroke:#bbb;stroke-width:1}`;
+
+// 2 端子の記号(中心 0,0、横向き、s=+1 なら pins[0] が左)
+function drawElement(g, sym, s, rot){
+  // 縦向き(rot)のときも記号の中の文字は横書きのまま
+  const T=(x,y,str,attrs)=>txt(g,x,y,str,Object.assign(rot? {transform:`rotate(-90 ${x} ${y})`} : {}, attrs));
+  const L=(pts,cls)=>el('path',{d:'M'+pts.map(p=>p.join(',')).join(' L'), class:cls||'ln'},g);
+  const lead=(a)=>{ L([[-20,0],[-a,0]]); L([[a,0],[20,0]]); };
+  const arrow=(x1,y1,x2,y2)=>{ L([[x1,y1],[x2,y2]]); const ang=Math.atan2(y2-y1,x2-x1), a=6, w=3; const p=[[x2,y2],[x2-a*Math.cos(ang)+w*Math.sin(ang), y2-a*Math.sin(ang)-w*Math.cos(ang)],[x2-a*Math.cos(ang)-w*Math.sin(ang), y2-a*Math.sin(ang)+w*Math.cos(ang)]]; el('polygon',{points:p.map(q=>q.join(',')).join(' '), class:'fill'},g); };
+  const circle=(letter)=>{ el('circle',{cx:0,cy:0,r:13,class:'shape'},g); lead(13); if(letter) T(0,0.5,letter,{'text-anchor':'middle','dominant-baseline':'central','font-size':14}); };
+  switch(sym){
+    case 'R': lead(18); el('rect',{x:-18,y:-6,width:36,height:12,class:'shape'},g); break;
+    case 'VR': lead(18); el('rect',{x:-18,y:-6,width:36,height:12,class:'shape'},g); arrow(-14,10,15,-11); break;
+    case 'C': lead(3); L([[-3,-10],[-3,10]]); L([[3,-10],[3,10]]); el('rect',{x:-3,y:-10,width:6,height:20,class:'shape',style:'stroke:none;fill-opacity:0'},g); break;
+    case 'CE': lead(3); L([[-3,-10],[-3,10]]); L([[3,-10],[3,10]]); T(s*-9, -6, '+', {'text-anchor':'middle','font-size':12}); break;
+    case 'L': { L([[-20,0],[-16,0]]); L([[16,0],[20,0]]); let d='M-16,0'; for(let k=0;k<4;k++) d+=` a4,4 0 0 1 8,0`; el('path',{d, class:'ln'},g); break; }
+    case 'D': case 'LED': case 'ZD': {
+      L([[-20,0],[20,0]]);   // 導線は三角形の中を通す(JIS C 0617-5 05-03-01)
+      el('path',{d:`M${s*-8},-8 L${s*-8},8 L${s*8},0 Z`, class:'ln'},g);
+      if(sym==='ZD') L([[s*4,-8],[s*8,-8],[s*8,8]]);   // 棒の片端だけを折る(05-03-06)
+      else L([[s*8,-8],[s*8,8]]);
+      if(sym==='LED'){ arrow(s*-1,-9,s*6,-17); arrow(s*5,-9,s*12,-17); }
+      break; }
+    case 'BAT': L([[-20,0],[s*-3,0]]); L([[s*3,0],[20,0]]); L([[s*-3,-12],[s*-3,12]]); L([[s*3,-6],[s*3,6]],'thick'); break;
+    case 'AC': circle(''); el('path',{d:'M-8,0 C-5,-8 -2,-8 0,0 C2,8 5,8 8,0', class:'ln'},g); break;
+    case 'SW': case 'PB':
+      // メーク接点(JIS C 0617-7 07-02-01)。接点の黒丸は描かない
+      L([[-20,0],[-10,0]]); L([[10,0],[20,0]]); L([[-10,0],[11,-9]]);
+      if(sym==='PB'){   // 押しボタン(自動復帰)の操作部(07-07-02)
+        el('path',{d:'M0,-4.5 L0,-15', class:'ln', 'stroke-dasharray':'3 2'},g);
+        L([[-5,-12],[-5,-15],[5,-15],[5,-12]]);
+      }
+      break;
+    case 'LAMP': el('circle',{cx:0,cy:0,r:13,class:'shape'},g); lead(13); L([[-9.2,-9.2],[9.2,9.2]]); L([[-9.2,9.2],[9.2,-9.2]]); break;
+    case 'AM': circle('A'); T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); break;
+    case 'VM': circle('V'); T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); break;
+    case 'M': circle('M'); break;
+  }
+}
+
+// MOS FET・オペアンプ・論理ゲート(中心 0,0、px)
+function drawFixed(g, c){
+  const sym=c.inst.def.sym;
+  const P=(d,cls,extra)=>el('path',Object.assign({d, class:cls||'ln'},extra||{}),g);
+  if(isMOS(sym)){
+    // JIS C 0617-5 05-05-14 の形(サブストレートを内部でソースに接続)。
+    // エンハンスメント形はチャネルを 3 つに切り(05-05-11/12)、デプレッション形は 1 本(05-05-15/16)。
+    // 矢印は N チャネルがチャネルへ向かう向き、P チャネルがチャネルから離れる向き
+    // P チャネルは図形全体を上下に反転して描く(矢印は横向きなので向きは変わらない)
+    if(sym[0]==='P') g=el('g',{transform:'scale(1,-1)'},g);
+    P('M-20,10 L-8,10 M-8,-12 L-8,10');                           // ゲート
+    if(sym==='NMOS'||sym==='PMOS') P('M-3,-13 L-3,-6 M-3,-3.5 L-3,3.5 M-3,6 L-3,13', 'ln', {style:'stroke-width:2.5'});
+    else P('M-3,-13 L-3,13', 'ln', {style:'stroke-width:2.5'});
+    P('M-3,-10 L10,-10 L10,-20');                                  // ドレイン
+    P('M-3,10 L10,10 L10,20');                                     // ソース
+    P('M-3,0 L10,0 L10,10');                                       // サブストレート(ソースへ)
+    const n=sym[0]==='N';
+    const pts= n? [[-3,0],[4,-3.5],[4,3.5]] : [[9,0],[2,-3.5],[2,3.5]];
+    el('polygon',{points:pts.map(p=>p.join(',')).join(' '), class:'fill'},g);
+    return;
+  }
+  if(sym==='OPAMP'){
+    P('M-30,-30 L-30,30 L30,0 Z','shape');
+    txt(g, -23, -10, '+', {'text-anchor':'middle','dominant-baseline':'central','font-size':14});
+    txt(g, -23, 10, '−', {'text-anchor':'middle','dominant-baseline':'central','font-size':14});
+    return;
+  }
+  const bubble=x=>el('circle',{cx:x, cy:0, r:4, class:'shape'},g);
+  if(sym==='NOT'){
+    P('M-30,0 L-15,0 M21,0 L30,0');
+    P('M-15,-12 L13,0 L-15,12 Z','shape'); bubble(17);
+    return;
+  }
+  // MIL 記号(2 入力)
+  const neg= sym==='NAND'||sym==='NOR';
+  const ox=15;   // 本体の出力側の端
+  if(sym==='AND'||sym==='NAND'){
+    P('M-30,-10 L-20,-10 M-30,10 L-20,10');
+    P('M-20,-15 L0,-15 A15,15 0 0 1 0,15 L-20,15 Z','shape');
+  } else {
+    const back= sym==='XOR'? -24.2 : -19.2;
+    P(`M-30,-10 L${back},-10 M-30,10 L${back},10`);
+    P('M-22,-15 Q-12,0 -22,15 Q2,15 15,0 Q2,-15 -22,-15 Z','shape');
+    if(sym==='XOR') P('M-27,-15 Q-17,0 -27,15');
+  }
+  if(neg){ bubble(ox+4); P(`M${ox+8},0 L30,0`); }
+  else P(`M${ox},0 L30,0`);
+}
+
+function drawPower(g, p){
+  const x=p.x*U, y=p.y*U, bx=(p.x+p.dir[0])*U, by=(p.y+p.dir[1])*U, [dx,dy]=p.dir;
+  if(p.net.power==='GND'){
+    // 接地: 長さの違う 3 本の線(導線に直交)
+    [[9,0],[6,4],[3,8]].forEach(([w,o])=>{
+      const cx=bx+dx*o, cy=by+dy*o;
+      el('path',{d: dx===0? `M${cx-w},${cy} L${cx+w},${cy}` : `M${cx},${cy-w} L${cx},${cy+w}`, class:'ln'},g);
+    });
+  } else {
+    // 電源: 導線に直交する線 + 電圧の名前
+    el('path',{d: dx===0? `M${bx-8},${by} L${bx+8},${by}` : `M${bx},${by-8} L${bx},${by+8}`, class:'ln'},g);
+    if(dx===0) txt(g, bx, by+dy*5, p.net.power, {'text-anchor':'middle','dominant-baseline': dy<0?'auto':'hanging', class:'lbl'});
+    else txt(g, bx+dx*4, by, p.net.power, {'text-anchor': dx<0?'end':'start','dominant-baseline':'central', class:'lbl'});
+  }
+}
+
+function drawScene(g, L, R){
+  for(const w of R.wires) el('path',{d:`M${w[0]*U},${w[1]*U} L${w[2]*U},${w[3]*U}`, class:'ln'},g);
+  for(const [x,y] of R.dots) el('circle',{cx:x*U, cy:y*U, r:3, class:'fill'},g);
+  for(const p of R.pwr) drawPower(g,p);
+  for(const n of R.netLabels){
+    const x=n.x*U+n.dir[0]*4, y=n.y*U+n.dir[1]*4;
+    txt(g, x, y, n.text, {class:'net','text-anchor': n.dir[0]<0?'end': n.dir[0]>0?'start':'middle','dominant-baseline': n.dir[1]<0?'auto': n.dir[1]>0?'hanging':'central'});
+  }
+  for(const c of L.comps){
+    const gs=el('g',{class:'sym','data-id':c.inst.name},g);
+    if(c.kind==='el'){
+      const gi=el('g',{transform:`translate(${c.cx*U},${c.cy*U})`+(c.vert?' rotate(90)':'')},gs);
+      if(c.inst.def.sym==='PART'){
+        const w=(c.hl-1)*2*U;
+        el('path',{d:`M${-c.hl*U+U},0 L${-w/2},0 M${w/2},0 L${c.hl*U-U},0`, class:'ln'},gi);
+        el('rect',{x:-w/2, y:-9, width:w, height:18, class:'shape'},gi);
+        txt(gi,0,0.5,c.inst.type,{'text-anchor':'middle','dominant-baseline':'central','font-size':11});
+      } else {
+        if(c.hl>3) el('path',{d:`M${-(c.hl-1)*U},0 L-20,0 M20,0 L${(c.hl-1)*U},0`, class:'ln'},gi);   // 幅を広げた部品の引き出し線
+        drawElement(gi, c.inst.def.sym, c.flip?-1:1, c.vert);
+      }
+      // 透明な当たり判定
+      const h=SYM_H[c.inst.def.sym]||9;
+      el('rect',{x:-(c.hl-1)*U, y:-h-4, width:2*(c.hl-1)*U, height:2*h+8, fill:'transparent'},gi);
+    } else if(c.kind==='box'){
+      el('rect',{x:c.x*U, y:c.y*U, width:c.w*U, height:c.h*U, class:'shape'},gs);
+      for(const q of c.pins){
+        const x=q.ax*U, y=q.ay*U;
+        if(q.side==='left') txt(gs, x+5, y, q.p.name, {'dominant-baseline':'central', class:'pin'});
+        if(q.side==='right') txt(gs, x-5, y, q.p.name, {'dominant-baseline':'central','text-anchor':'end', class:'pin'});
+        if(q.side==='top') txt(gs, x, y+5, q.p.name, {'dominant-baseline':'hanging','text-anchor':'middle', class:'pin'});
+        if(q.side==='bottom') txt(gs, x, y-5, q.p.name, {'text-anchor':'middle', class:'pin'});
+        if(q.p.num){   // 物理ピン番号は引き出し線の外側に小さく
+          const o={'font-size':10, fill:'#444'};
+          if(q.side==='left') txt(gs, x-3, y-3, q.p.num, Object.assign({'text-anchor':'end'},o));
+          if(q.side==='right') txt(gs, x+3, y-3, q.p.num, o);
+          if(q.side==='top') txt(gs, x+3, y-4, q.p.num, o);
+          if(q.side==='bottom') txt(gs, x+3, y+12, q.p.num, o);
+        }
+      }
+      const cx=(c.x+c.w/2)*U, cy=(c.y+c.h/2)*U, lab=c.inst.def.part.label;
+      const lines=[[c.inst.name,'ttl']]; if(lab) lines.push([lab,'lbl']); if(c.inst.value) lines.push([c.inst.value,'lbl']);
+      lines.forEach(([t,cls],i)=>txt(gs, cx, cy+(i-(lines.length-1)/2)*16, t, {'text-anchor':'middle','dominant-baseline':'central', class:cls}));
+    } else if(c.fix){
+      const gi=el('g',{transform:`translate(${c.x*U},${c.y*U})`},gs);
+      drawFixed(gi, c);
+      const b=c.fix.body;
+      el('rect',{x:b.x0, y:b.y0, width:b.x1-b.x0, height:b.y1-b.y0, fill:'transparent'},gi);
+      const {x,y,anchor}=c.fix.label, v=c.inst.value;
+      if(isMOS(c.inst.def.sym)){
+        txt(gi, x, v? -5 : 0, c.inst.name, {'dominant-baseline':'central', class:'ttl'});
+        if(v) txt(gi, x, 10, v, {'dominant-baseline':'central', class:'lbl'});
+      } else {
+        txt(gi, x, v? y-14 : y, c.inst.name, {'text-anchor':anchor, class:'ttl'});
+        if(v) txt(gi, x, y, v, {'text-anchor':anchor, class:'lbl'});
+      }
+    } else if(c.kind==='tr' && c.inst.def.sym==='POT'){
+      // しゅう動接点付き抵抗器(JIS C 0617-4 04-01-05): 抵抗器に、しゅう動接点の矢印を当てる
+      const gi=el('g',{transform:`translate(${c.x*U},${c.y*U})`},gs);
+      el('rect',{x:-18, y:-6, width:36, height:12, class:'shape'},gi);
+      el('path',{d:'M0,-20 L0,-12', class:'ln'},gi);
+      el('polygon',{points:'0,-6 -3.5,-13 3.5,-13', class:'fill'},gi);
+      el('rect',{x:-20, y:-22, width:40, height:32, fill:'transparent'},gi);
+      txt(gi, 0, c.inst.value? 24 : 26, c.inst.name, {'text-anchor':'middle', class:'ttl'});
+      if(c.inst.value) txt(gi, 0, 38, c.inst.value, {'text-anchor':'middle', class:'lbl'});
+    } else if(c.kind==='tr'){
+      const gi=el('g',{transform:`translate(${c.x*U},${c.y*U})`},gs);
+      el('circle',{cx:0, cy:0, r:22, class:'shape'},gi);
+      el('path',{d:'M-20,0 L-7,0', class:'ln'},gi);
+      el('path',{d:'M-7,-11 L-7,11', class:'ln', style:'stroke-width:2.5'},gi);
+      el('path',{d:'M-7,-5 L10,-14 L10,-20', class:'ln'},gi);
+      el('path',{d:'M-7,5 L10,14 L10,20', class:'ln'},gi);
+      // エミッタの矢印(NPN は外向き、PNP は内向き)
+      const out=c.inst.def.sym==='NPN';
+      const [ax,ay,bx,by]= out? [-7,5,8,13] : [10,14,-5,6];
+      const ang=Math.atan2(by-ay,bx-ax), a=7, w=3.5;
+      el('polygon',{points:[[bx,by],[bx-a*Math.cos(ang)+w*Math.sin(ang), by-a*Math.sin(ang)-w*Math.cos(ang)],[bx-a*Math.cos(ang)-w*Math.sin(ang), by-a*Math.sin(ang)+w*Math.cos(ang)]].map(p=>p.join(',')).join(' '), class:'fill'},gi);
+      txt(gi, 28, c.inst.value? -5 : 0, c.inst.name, {'dominant-baseline':'central', class:'ttl'});
+      if(c.inst.value) txt(gi, 28, 10, c.inst.value, {'dominant-baseline':'central', class:'lbl'});
+    }
+  }
+  for(const t of R.labels){
+    const gs=g.querySelector(`[data-id="${t.owner.inst.name}"]`)||g;
+    txt(gs, t.x, t.y, t.text, {'text-anchor':t.anchor, class:'lbl'});
+  }
+}
+
+function newSVG(W,H){
+  const svg=el('svg',{xmlns:SVG_NS, width:W, height:H, viewBox:`0 0 ${W} ${H}`, 'font-family':FONT, 'font-size':14});
+  const style=el('style',{},svg); style.textContent=SVG_STYLE;
+  el('rect',{x:0,y:0,width:W,height:H,fill:'#fff'},svg);
+  return svg;
+}
+
+function renderSVG(L, R){
+  const M=30, b=R.bounds;
+  const x0=b.x0*U-M, y0=b.y0*U-M, W=Math.round((b.x1-b.x0)*U+2*M), H=Math.round((b.y1-b.y0)*U+2*M);
+  const svg=newSVG(W,H);
+  const g=el('g',{transform:`translate(${-x0},${-y0})`},svg);
+  drawScene(g,L,R);
+  return svg;
+}
+// 用紙に合わせる(1 ページに縮小して収める)
+const PAGE={ A4P:{w:794,h:1123}, A4L:{w:1123,h:794}, M:40 };
+function renderPage(L, R, size){
+  const b=R.bounds, M=PAGE.M;
+  const w=(b.x1-b.x0)*U+40, h=(b.y1-b.y0)*U+40;
+  const sc=Math.min(1, (size.w-2*M)/w, (size.h-2*M)/h);
+  const svg=newSVG(size.w,size.h);
+  el('rect',{x:0.5,y:0.5,width:size.w-1,height:size.h-1,class:'frame screen-only'},svg);
+  const g=el('g',{transform:`translate(${(size.w-w*sc)/2},${M}) scale(${sc}) translate(${-b.x0*U+20},${-b.y0*U+20})`},svg);
+  drawScene(g,L,R);
+  return svg;
+}
+
+function build(text, opts){
+  const model=parse(text);
+  const A=analyze(model);
+  const L=layout(model, A, opts||{});
+  const R=route(L, A, model);
+  return {model, A, L, R};
+}
+
+return {parse, analyze, layout, route, build, renderSVG, renderPage, PAGE, BUILTIN, ParseError, powerVolt};
+})();
+
+/* =====================================================================
+   8. UI
+   ===================================================================== */
+const $=s=>document.querySelector(s);
+const srcEl=$('#src'), viewEl=$('#view'), msgEl=$('#msg'), editEl=$('#edit');
+let result=null, selectedId=null, svgEl=null, stale=false;
+
+const SAMPLE=`# Arduino で LED を点け、超音波センサーで距離を測り、マイクで音を拾う回路
+# 機種は part で定義します(使うピンだけ書いても構いません)
+part ArduinoUno "Arduino Uno":
+    top    VIN 5V 3.3V IOREF
+    left   RESET AREF | A0 A1 A2 A3 A4/SDA A5/SCL
+    right  D0 D1 D2 D3 D4 D5 D6 D7 | D8 D9 D10/SS D11/MOSI D12/MISO D13/SCK
+    bottom GND
+
+part HC-SR04 "超音波距離センサー":
+    top    VCC
+    left   TRIG ECHO
+    bottom GND
+
+part GY-MAX4466 "マイクアンプ(MAX4466)":
+    top    VCC
+    right  OUT
+    bottom GND
+
+U1 = ArduinoUno
+R1 = R 220Ω
+D1 = LED 赤
+U2 = HC-SR04
+U3 = GY-MAX4466
+
+U1.D13 -- R1 -- D1 -- GND      # 連鎖の向きが LED の向き(左がアノード)
+U1.D7  -- U2.TRIG
+U1.D8  -- U2.ECHO
+U1.5V  -- 5V
+U2.VCC -- 5V
+U1.GND -- GND
+U2.GND -- GND
+U1.A0  -- U3.OUT    # マイクの出力をアナログ入力へ
+U3.VCC -- 5V
+U3.GND -- GND
+`;
+const SAMPLE_HS=`# 電池・スイッチ・電球・電流計の直列回路と、電球に並列な電圧計
+E1 = BAT 1.5V
+S1 = SW
+L1 = LAMP
+A1 = AM
+V1 = VM
+
+E1.+ -- S1 -- L1 -- A1 -- E1.-
+V1.+ -- L1.1
+V1.- -- L1.2
+`;
+
+function opts(){ return {allPins:$('#optAllPins').checked}; }
+
+function render(){
+  const text=srcEl.value;
+  highlight(text); syncScroll();
+  msgEl.innerHTML='';
+  let r;
+  try{ r=CIRC.build(text, opts()); }
+  catch(e){
+    if(e instanceof CIRC.ParseError) msgEl.innerHTML=`<div class="err">${e.line} 行目: ${esc(e.message)}</div>`;
+    else { msgEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; console.error(e); }
+    stale=true; editEl.classList.remove('on'); viewEl.classList.add('stale');
+    return;
+  }
+  result=r; stale=false; viewEl.classList.remove('stale');
+  viewEl.querySelectorAll('svg').forEach(s=>s.remove());
+  const page=$('#optPage').value;
+  if(page){ svgEl=CIRC.renderPage(r.L, r.R, CIRC.PAGE[page]); viewEl.classList.add('paged'); }
+  else { svgEl=CIRC.renderSVG(r.L, r.R); viewEl.classList.remove('paged'); }
+  viewEl.appendChild(svgEl);
+  viewEl.querySelectorAll('.sym').forEach(g=>g.addEventListener('click', ev=>{ ev.stopPropagation(); select(g.getAttribute('data-id')); }));
+  if(selectedId){ const gs=viewEl.querySelectorAll(`[data-id="${selectedId}"]`); if(gs.length) gs.forEach(g=>g.classList.add('selected')); else selectedId=null; }
+  const nParts=r.model.insts.length, nNets=r.A.nets.filter(n=>n.pins.length>1).length;
+  let html='';
+  if(r.R.issues.length) html+=`<div class="err">内部の配置検査で ${r.R.issues.length} 件の問題(ツールの不具合です。報告してください): ${esc(r.R.issues[0])}</div>`;
+  for(const w of r.A.warns) html+=`<div class="warn">警告: ${esc(w)}</div>`;
+  for(const w of (r.L.warns||[])) html+=`<div class="warn">警告: ${esc(w)}</div>`;
+  for(const n of r.R.failed) html+=`<div class="warn">接続 ${esc(n.display||'')} は線で結べなかったため、名前のラベル ${esc(n.display||'')} でつないでいます</div>`;
+  if(!r.R.issues.length) html+=`<div class="ok">部品 ${nParts} 個、接続 ${nNets} 本</div>`;
+  msgEl.innerHTML=html;
+  updateEdit();
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ---- 色付け(textarea の背後に同じ文字を重ねる) ---- */
+const hlEl=$('#hl');
+function highlight(text){
+  const re=/(#[^\n]*)|("[^"\n]*")|(\s--\s)|\b(part|place|above|below|top|left|right|bottom)\b|\b(R|VR|POT|C|CE|L|D|ZD|LED|BAT|AC|SW|PB|LAMP|AM|VM|M|NPN|PNP|NMOSD|PMOSD|NMOS|PMOS|OPAMP|NOT|AND|OR|NAND|NOR|XOR)\b(?=\s|$)|((?<![.\w])(?:GND|[+-]?\d+(?:\.\d+)?V)\b)/g;
+  let out='', last=0, m;
+  while((m=re.exec(text))){
+    out+=esc(text.slice(last,m.index)); last=re.lastIndex;
+    const t=m[0];
+    if(m[1]) out+=`<span class="cm">${esc(t)}</span>`;
+    else if(m[2]) out+=`<span class="st">${esc(t)}</span>`;
+    else if(m[3]) out+=`<span class="op">${esc(t)}</span>`;
+    else if(m[4]) out+=`<span class="kw">${t}</span>`;
+    else if(m[5]) out+= isTypePos(text, m.index)? `<span class="bi">${t}</span>` : t;
+    else if(m[6]) out+=`<span class="nu">${esc(t)}</span>`;
+  }
+  out+=esc(text.slice(last));
+  hlEl.innerHTML=out+'\n';
+}
+function isTypePos(text, i){ const ls=text.lastIndexOf('\n', i-1)+1; return /^\s*[A-Za-z_]\w*\s*=\s*$/.test(text.slice(ls, i)); }
+function syncScroll(){ hlEl.scrollTop=srcEl.scrollTop; hlEl.scrollLeft=srcEl.scrollLeft; }
+srcEl.addEventListener('scroll', syncScroll);
+let timer=null;
+srcEl.addEventListener('input', ()=>{ highlight(srcEl.value); clearTimeout(timer); timer=setTimeout(render, 200); });
+function insertText(t){
+  srcEl.focus();
+  let ok=false; try{ ok=document.execCommand('insertText', false, t); }catch(e){}
+  if(!ok){ const s=srcEl.selectionStart, e=srcEl.selectionEnd; srcEl.value=srcEl.value.slice(0,s)+t+srcEl.value.slice(e); srcEl.selectionStart=srcEl.selectionEnd=s+t.length; }
+  highlight(srcEl.value); clearTimeout(timer); timer=setTimeout(render, 200);
+}
+srcEl.addEventListener('keydown', e=>{
+  if(e.isComposing || e.keyCode===229) return;
+  if(e.key==='Tab' && !e.shiftKey){ e.preventDefault(); insertText('    '); }
+  if(e.key==='Enter'){
+    const s=srcEl.selectionStart; const before=srcEl.value.slice(0,s); const line=before.slice(before.lastIndexOf('\n')+1);
+    let ind=/^\s*/.exec(line)[0]; if(/:\s*$/.test(line)) ind+='    ';
+    e.preventDefault(); insertText('\n'+ind);
+  }
+});
+$('#optAllPins').addEventListener('change', render);
+$('#optPage').addEventListener('change', render);
+viewEl.addEventListener('click', ()=>select(null));
+
+/* ---- 選択と編集 ---- */
+function lineRange(n){ const v=srcEl.value; let s=0; for(let i=1;i<n;i++){ s=v.indexOf('\n',s)+1; if(s===0) return null; } let e=v.indexOf('\n',s); if(e<0) e=v.length; return [s,e]; }
+function gotoLine(n){ const r=lineRange(n); if(!r) return; srcEl.focus(); srcEl.setSelectionRange(r[0],r[1]); const lh=19.5; srcEl.scrollTop=Math.max(0,(n-3)*lh); syncScroll(); }
+function select(id){
+  if(stale) return;
+  selectedId=id;
+  viewEl.querySelectorAll('.sym.selected').forEach(g=>g.classList.remove('selected'));
+  if(id) viewEl.querySelectorAll(`[data-id="${id}"]`).forEach(g=>g.classList.add('selected'));
+  updateEdit();
+}
+function updateEdit(){
+  editEl.innerHTML=''; editEl.classList.remove('on');
+  if(!selectedId || !result) return;
+  const I=result.model.insts.find(i=>i.name===selectedId);
+  if(!I) return;
+  editEl.classList.add('on');
+  const add=(html)=>{ const d=document.createElement('div'); d.className='grp'; d.innerHTML=html; editEl.appendChild(d); return d; };
+  add(`<span class="kind">${esc(I.name)}(${esc(I.def.label||I.type)})</span><span class="small">${I.line} 行目</span>`);
+  const d=add(`<label>値 <input type="text" value="${esc(I.value)}"></label>`);
+  const inp=d.querySelector('input');
+  inp.addEventListener('change', ()=>{
+    const v=inp.value.trim();
+    if(/[#"]/.test(v) || v.includes('--')){ alert('値に # と " と -- は使えません'); updateEdit(); return; }
+    const r=lineRange(I.line); if(!r) return;
+    const line=`${I.name} = ${I.type}${v?' '+v:''}${I.comment?'    # '+I.comment:''}`;
+    srcEl.focus(); srcEl.setSelectionRange(r[0],r[1]); insertText(line);
+  });
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); inp.blur(); } });
+  const ctl=add('');
+  const b1=document.createElement('button'); b1.textContent='テキストのこの行へ'; b1.addEventListener('click',()=>gotoLine(I.line)); ctl.appendChild(b1);
+  const b2=document.createElement('button'); b2.textContent='閉じる'; b2.addEventListener('click',()=>select(null)); ctl.appendChild(b2);
+}
+
+/* ---- 保存・読込 ---- */
+function download(name, blob){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+function docJSON(){ return {app:'回路図', url:'https://circuit.sapp.jp', version:1, source:srcEl.value, options:{allPins:$('#optAllPins').checked, page:$('#optPage').value}}; }
+function baseName(){ return 'circuit'; }
+function svgText(){
+  if(!svgEl) return null;
+  const clone=svgEl.cloneNode(true);
+  clone.querySelectorAll('.selected').forEach(g=>g.classList.remove('selected'));
+  clone.querySelectorAll('.screen-only').forEach(e=>e.remove());
+  const meta=document.createElementNS('http://www.w3.org/2000/svg','metadata'); meta.setAttribute('id','circuit-source');
+  meta.textContent=JSON.stringify(docJSON());
+  clone.insertBefore(meta, clone.firstChild);
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<!-- 回路図 (https://circuit.sapp.jp) で作成。metadata に元のテキストを含み、このファイルを回路図で開くと編集を続けられます -->\n'+new XMLSerializer().serializeToString(clone);
+}
+$('#saveAs').addEventListener('change', ()=>{
+  const v=$('#saveAs').value; $('#saveAs').value='';
+  if(!v) return;
+  if(v==='print'){ window.print(); return; }
+  if(v==='txt'){ download(baseName()+'.txt', new Blob([srcEl.value],{type:'text/plain'})); return; }
+  if(v==='json'){ download(baseName()+'.json', new Blob([JSON.stringify(docJSON(),null,2)],{type:'application/json'})); return; }
+  if(!svgEl || stale){ alert('図がありません(エラーを直してください)'); return; }
+  if(v==='svg'){ download(baseName()+'.svg', new Blob([svgText()],{type:'image/svg+xml'})); return; }
+  if(v==='png'){
+    const scale=3, w=svgEl.width.baseVal.value, h=svgEl.height.baseVal.value;
+    const img=new Image(), url=URL.createObjectURL(new Blob([svgText()],{type:'image/svg+xml'}));
+    img.onload=()=>{ const c=document.createElement('canvas'); c.width=w*scale; c.height=h*scale; const g=c.getContext('2d'); g.scale(scale,scale); g.drawImage(img,0,0); URL.revokeObjectURL(url); c.toBlob(b=>download(baseName()+'.png', b),'image/png'); };
+    img.onerror=()=>alert('PNG の作成に失敗しました');
+    img.src=url;
+  }
+});
+function setSource(text){
+  // テキスト全体を置き換える(Ctrl+Z で元に戻せるよう、可能なら入力操作として置き換える)
+  srcEl.focus(); srcEl.select();
+  let ok=false; try{ ok=document.execCommand('insertText', false, text); }catch(e){}
+  if(!ok || srcEl.value!==text) srcEl.value=text;
+  selectedId=null; render();
+}
+function applyOptions(o){ if(!o) return; $('#optAllPins').checked=!!o.allPins; $('#optPage').value=o.page||''; }
+function openFile(file){
+  if(/\.png$/i.test(file.name)){ alert('PNG は開けません(図の画像だけで、元のテキストを含みません)。JSON、SVG、.txt のいずれかを開いてください。'); return; }
+  if(!/\.(txt|json|svg)$/i.test(file.name)){ alert('開けるのは .txt、.json、回路図で保存した .svg です: '+file.name); return; }
+  if(srcEl.value.trim()!=='' && !confirm('書いている内容を「'+file.name+'」で置き換えますか?')) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    const t=r.result;
+    try{
+      let src, opts=null;
+      if(/\.json$/i.test(file.name)){ const j=JSON.parse(t); if(typeof j.source!=='string') throw 0; src=j.source; opts=j.options; }
+      else if(/\.svg$/i.test(file.name)){ const m=/<metadata[^>]*id="circuit-source"[^>]*>([\s\S]*?)<\/metadata>/.exec(t); if(!m) throw 0; const j=JSON.parse(m[1].replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&amp;/g,'&')); if(typeof j.source!=='string') throw 0; src=j.source; opts=j.options; }
+      else src=t;
+      applyOptions(opts);
+      setSource(src);
+    }catch(e){ alert('このファイルは回路図で開けません: '+file.name); }
+  };
+  r.readAsText(file);
+}
+$('#fileOpen').addEventListener('change', e=>{ if(e.target.files[0]) openFile(e.target.files[0]); e.target.value=''; });
+// ファイルのドラッグだけを受け付ける(テキスト欄での文字のドラッグは邪魔しない)
+const isFileDrag=e=>e.dataTransfer && [...(e.dataTransfer.types||[])].includes('Files');
+['dragenter','dragover'].forEach(ev=>window.addEventListener(ev, e=>{ if(!isFileDrag(e)) return; e.preventDefault(); $('#drop').classList.add('on'); }));
+window.addEventListener('dragleave', e=>{ if(!isFileDrag(e)) return; e.preventDefault(); if(e.relatedTarget===null) $('#drop').classList.remove('on'); });
+window.addEventListener('drop', e=>{ if(!isFileDrag(e)) return; e.preventDefault(); $('#drop').classList.remove('on'); const f=e.dataTransfer.files[0]; if(f) openFile(f); });
+function loadSample(s){ if(srcEl.value.trim()==='' || confirm('書いている内容を例で置き換えますか?')){ srcEl.value=s; selectedId=null; render(); return true; } return false; }
+$('#btnNew').addEventListener('click', ()=>{ if(srcEl.value.trim()==='' || confirm('書いている内容を消して新規作成しますか?')){ srcEl.value=''; selectedId=null; render(); } });
+$('#btnSample').addEventListener('click', ()=>loadSample(SAMPLE));
+/* ---- 分割バーの移動 ---- */
+(()=>{ const sp=$('#splitter'), left=$('#left'); let drag=false; sp.addEventListener('mousedown',()=>{drag=true;document.body.style.userSelect='none';}); window.addEventListener('mouseup',()=>{drag=false;document.body.style.userSelect='';}); window.addEventListener('mousemove',e=>{ if(drag) left.style.width=Math.max(200,e.clientX)+'px'; }); })();
+
+/* ---- ダイアログは枠外クリックで閉じる ---- */
+document.querySelectorAll('dialog').forEach(d=>d.addEventListener('click', e=>{ const r=d.getBoundingClientRect(); if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) d.close(); }));
+/* ---- 書き方の説明 ---- */
+$('#btnHelp').addEventListener('click', ()=>{
+  const d=$('#dlgHelp');
+  const rows=Object.entries(CIRC.BUILTIN).map(([k,b])=>`<tr><td><code>${k}</code></td><td>${esc(b.label)}</td><td><code>${b.pins.map(esc).join(' ')}</code></td></tr>`).join('');
+  d.innerHTML=`<h2>書き方</h2>
+<p>1 行に 1 つの文を書きます。<code>#</code> から行末まではコメントです。文は次の 4 種類です。</p>
+<table>
+<tr><th>書き方</th><th>意味</th></tr>
+<tr><td><code>名前 = 種類 値</code></td><td>部品を置く。名前は英字で始まる英数字と <code>_</code>(例 <code>R1</code>)。値は省略でき、書いたとおりに図に出ます(例 <code>220Ω</code>、<code>4.7k</code>、<code>10µF</code>)。値に <code>#</code>・<code>"</code>・<code>--</code> は使えません。</td></tr>
+<tr><td><code>A -- B -- C</code></td><td>同じ接続にする。<code>--</code> の前後には空白が必要です。<br><code>部品.ピン</code> は部品のピン(最初の <code>.</code> で区切るので <code>U1.3.3V</code> も可)。<br>置いていない名前は接続の名前です。<code>GND</code> と <code>5V</code>・<code>3.3V</code>・<code>12V</code> のような「数字+V」は電源の記号です(<code>+5V</code> は <code>5V</code> と同じ電源)。ほかの名前は線で結びます(名前は図に出ません)。接続の名前に使えるのは英数字と <code>_</code> <code>+</code> <code>-</code> です。</td></tr>
+<tr><td><code>part 種類名 "説明":</code><br><code>&nbsp;&nbsp;&nbsp;&nbsp;left ピン ピン …</code></td><td>部品の種類を定義する(マイコン基板やセンサーなど)。字下げした行に、ピンを出す辺(<code>top</code> / <code>left</code> / <code>right</code> / <code>bottom</code>)とピン名を書きます。左右の辺は上から、上下の辺は左から順に並びます。<code>|</code> を 1 つ書くごとに 1 つ空きを入れます。<code>D13/SCK</code> のように <code>/</code> で別名を付けられます。<code>VCC@14</code> のように <code>@</code> の後に書いた番号は、IC の物理ピン番号として引き出し線の外側に出ます。ピンが 2 本だけの部品は、辺の指定によらず、抵抗などと同じく連鎖に入る小さな箱として描かれます。</td></tr>
+<tr><td><code>place A below B</code></td><td>配置のヒント。部品 A(を含む連鎖の行、または箱)を B の下に置きます。<code>below</code> のほかに <code>above</code>(上)・<code>left</code>(左)・<code>right</code>(右)。書かなければすべて自動で置きます。同じ連鎖の中の部品どうしは離せません。</td></tr>
+</table>
+<h3>連鎖</h3>
+<p>ピンが 2 本の部品(<code>NOT</code> ゲートを除く)は <code>U1.D13 -- R1 -- D1 -- GND</code> のように、ピンを書かずに連鎖の途中に置けます。連鎖の入る側が下の表のピン一覧の 1 番目(極性のある部品ではアノード・+)になります。逆向きに使うときや連鎖の端では <code>D1.K</code> のようにピンで書きます。部品名だけで書けるのは 1 つの部品につき 1 回です。トランジスタ・ボリューム・MOS FET・オペアンプ・論理ゲート(<code>NOT</code> も含む)は、いつも <code>Q1.B</code>・<code>VR1.2</code>・<code>U1.OUT</code> のようにピンで書きます。ボリューム(<code>POT</code>)のピン <code>2</code> がしゅう動接点(真ん中の足)です。オペアンプの電源のピン <code>V+</code>・<code>V-</code> は省略でき、つないだときだけ描きます(例 <code>U1.V+ -- 12V</code>、<code>U1.V- -- -12V</code> で電源の電圧が図に出ます)。論理ゲートは MIL 記号で描きます。</p>
+<h3>組み込みの部品(記号は高校の教科書などで使われる形)</h3>
+<table><tr><th>種類</th><th>部品</th><th>ピン(1 番目が連鎖の入る側)</th></tr>${rows}</table>
+<h3>警告</h3>
+<p>図は描いたうえで、次の場合に警告を出します。部品の両端が電源・GND に直接つながっていて向きが判断できるときの極性の誤り(LED・ダイオード・ツェナーダイオードの順方向の直結、LED の逆向き、電解コンデンサの逆向き)、端子の付け忘れ、1 回しか書かれていない接続の名前(書き間違いの疑い)、部品の両端の短絡、電源どうしの短絡、<code>place</code> で同じ連鎖の中の部品どうしを指定したとき(その指定は使われません)。</p>
+<h3>例(高校の直流回路)</h3>
+<pre>${esc(SAMPLE_HS)}</pre>
+<p><button id="btnLoadHS">この例を読み込む</button></p>
+<h3>生成 AI に書かせるとき</h3>
+<p>指示文は <code>docs/prompt_for_ai.md</code>(全部入り)と <code>docs/prompt_for_ai_hackathon.md</code>(Arduino とセンサー用)にあります。最初にその中身を AI に渡してください。</p>
+<form method="dialog"><button>閉じる</button></form>`;
+  d.querySelector('#btnLoadHS').addEventListener('click', ()=>{ if(loadSample(SAMPLE_HS)) d.close(); });
+  d.showModal();
+});
+
+render();
+</script>
+</body>
+</html>

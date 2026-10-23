@@ -1419,6 +1419,9 @@ function selectNet(net, pw){
   viewEl.querySelectorAll('.selected').forEach(g=>g.classList.remove('selected'));
   viewEl.querySelectorAll(`.wire[data-net="${net}"]`).forEach(g=>g.classList.add('selected'));
   updateEdit();
+  // 書いた行が 1 つだけなら、すぐその行へ飛ぶ(編集パネルは出したまま)
+  const n=result.A.nets.find(z=>z.id===net), p= pw!==null? result.R.pwr[pw] : null;
+  if(n){ const lines=netLines(n, p && p.owner); if(lines.length===1) gotoLine(lines[0]); }
 }
 // 接続を書いた行(つなぐ文のうち、その接続のピン・名前・連鎖の部品を含む行)。owner を渡すとその端子を書いた行だけ
 function netLines(net, owner){

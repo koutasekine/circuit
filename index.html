@@ -72,6 +72,10 @@ textarea#src{resize:none;outline:none;background:transparent;color:transparent;c
 #edit .kind{font-weight:600;margin-right:6px}
 .sym.selected .shape{fill:var(--sel)}
 .sym{cursor:pointer}
+.wire{cursor:pointer}
+.wire.selected .ln{stroke:var(--accent)}
+.wire.selected .fill{fill:var(--accent)}
+.wire.selected text{fill:var(--accent)}
 .sym:hover .shape{fill:#f6f6f0}
 dialog{border:1px solid #999;border-radius:6px;padding:16px 20px;max-width:760px;font-size:14px}
 dialog h2{font-size:16px;margin:0 0 8px}
@@ -764,7 +768,7 @@ function route(L, A, model){
           if(!r.vert) dir= n.power==='GND'? [0,1] : atStart? [-r.dx,0] : atEnd? [r.dx,0] : [0,1];   // 途中の電源は下向き(上には部品の名前と値がある)
           else dir= atStart? [0,-r.dy] : atEnd? [0,r.dy] : [1,0];
           const key='pw:'+t.x+','+t.y;
-          if(!pwr.some(p=>p.key===key)) pwr.push({key, net:n, x:t.x, y:t.y, dir});
+          if(!pwr.some(p=>p.key===key)) pwr.push({key, net:n, x:t.x, y:t.y, dir, owner:{inst:I.name, pin:t.pin}});
         } else addTerm(n, t.x, t.y);
         const atRowEnd=(t.x===r.sx && t.y===r.sy)||(t.x===r.ex && t.y===r.ey);
         if(atRowEnd && !n.power) keep.push({x:2*t.x-inner[0], y:2*t.y-inner[1], net:n});
@@ -779,7 +783,7 @@ function route(L, A, model){
         if(!n.power) keep.push({x:q.lx+q.dx, y:q.ly+q.dy, net:n});
         const st= c.fix? powerStagger(c.inst, c.pins, q, A.netOf) : 0;
         for(let k=0;k<st;k++){ const a=[q.lx+q.dx*k, q.ly], b=[q.lx+q.dx*(k+1), q.ly]; pre.push({net:n,a,b}); owned.push({x:b[0],y:b[1],net:n,noJoin:true}); }
-        if(n.power) pwr.push({key:'pw:'+(q.lx+q.dx*st)+','+q.ly, net:n, x:q.lx+q.dx*st, y:q.ly, dir:[q.dx,q.dy], onBox:c.kind==='box' || (c.fix && !isMOS(c.inst.def.sym))});   // オペアンプ・ゲートの入力もピンの間隔が狭いので横向きのまま
+        if(n.power) pwr.push({key:'pw:'+(q.lx+q.dx*st)+','+q.ly, net:n, owner:{inst:c.inst.name, pin:q.p.name}, x:q.lx+q.dx*st, y:q.ly, dir:[q.dx,q.dy], onBox:c.kind==='box' || (c.fix && !isMOS(c.inst.def.sym))});   // オペアンプ・ゲートの入力もピンの間隔が狭いので横向きのまま
         else if(n.pins.length>1 || n.names.length) addTerm(n, q.lx, q.ly);
       }
       if(c.kind==='box'){
@@ -968,13 +972,13 @@ function route(L, A, model){
     const hs=es.filter(e=>e[1]===e[3]).sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
     const vs=es.filter(e=>e[0]===e[2]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
     let cur=null;
-    for(const e of hs){ if(cur && cur[1]===e[1] && cur[2]===e[0]) cur[2]=e[2]; else { if(cur) wires.push(cur); cur=[...e]; } }
+    for(const e of hs){ if(cur && cur[1]===e[1] && cur[2]===e[0]) cur[2]=e[2]; else { if(cur) wires.push(cur); cur=[...e]; cur.net=n; } }
     if(cur) wires.push(cur); cur=null;
-    for(const e of vs){ if(cur && cur[0]===e[0] && cur[3]===e[1]) cur[3]=e[3]; else { if(cur) wires.push(cur); cur=[...e]; } }
+    for(const e of vs){ if(cur && cur[0]===e[0] && cur[3]===e[1]) cur[3]=e[3]; else { if(cur) wires.push(cur); cur=[...e]; cur.net=n; } }
     if(cur) wires.push(cur);
     const deg=new Map();
     for(const e of es){ for(const k of [e[0]+','+e[1], e[2]+','+e[3]]) deg.set(k,(deg.get(k)||0)+1); }
-    for(const [k,v] of deg) if(v>=3){ const [x,y]=k.split(',').map(Number); dots.push([x,y]); }
+    for(const [k,v] of deg) if(v>=3){ const [x,y]=k.split(',').map(Number); const d=[x,y]; d.net=n; dots.push(d); }
   }
   // 引けなかった接続は名前のラベルでつなぐ
   const netLabels=[];
@@ -983,7 +987,7 @@ function route(L, A, model){
       // 端子の外向き: 空いている向き
       let dir=[0,1];
       for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const e=edgeAt(t.x,t.y,dx===1?0:dx===-1?2:dy===1?1:3); if(e===-1){ dir=[dx,dy]; break; } }
-      netLabels.push({x:t.x, y:t.y, dir, text:n.display||'?'});
+      netLabels.push({x:t.x, y:t.y, dir, text:n.display||'?', net:n.id});
     }
   }
   // 自己検査
@@ -1019,7 +1023,7 @@ const SVG_NS='http://www.w3.org/2000/svg';
 function el(tag, attrs, parent){ const e=document.createElementNS(SVG_NS, tag); for(const k in attrs) e.setAttribute(k, attrs[k]); if(parent) parent.appendChild(e); return e; }
 function txt(parent, x, y, s, attrs){ const t=el('text', Object.assign({x, y}, attrs||{}), parent); t.textContent=s; return t; }
 
-const SVG_STYLE=`.shape{fill:#fff;stroke:#000;stroke-width:1.5}.ln{fill:none;stroke:#000;stroke-width:1.5}.thick{fill:none;stroke:#000;stroke-width:4}.fill{fill:#000;stroke:none}.lbl{font-size:12px}.pin{font-size:12px}.ttl{font-size:13px;font-weight:600}.net{font-size:12px;fill:#000}.frame{fill:none;stroke:#bbb;stroke-width:1}`;
+const SVG_STYLE=`.shape{fill:#fff;stroke:#000;stroke-width:1.5}.ln{fill:none;stroke:#000;stroke-width:1.5}.thick{fill:none;stroke:#000;stroke-width:4}.fill{fill:#000;stroke:none}.lbl{font-size:12px}.pin{font-size:12px}.ttl{font-size:13px;font-weight:600}.net{font-size:12px;fill:#000}.frame{fill:none;stroke:#bbb;stroke-width:1}.hit{fill:transparent;stroke:transparent;stroke-width:10}`;
 
 // 2 端子の記号(中心 0,0、横向き、s=+1 なら pins[0] が左)
 function drawElement(g, sym, s, rot){
@@ -1125,12 +1129,28 @@ function drawPower(g, p){
 }
 
 function drawScene(g, L, R){
-  for(const w of R.wires) el('path',{d:`M${w[0]*U},${w[1]*U} L${w[2]*U},${w[3]*U}`, class:'ln'},g);
-  for(const [x,y] of R.dots) el('circle',{cx:x*U, cy:y*U, r:3, class:'fill'},g);
-  for(const p of R.pwr) drawPower(g,p);
+  // 線・接続点・電源記号・名前のラベルは、クリックで接続を選べるよう接続ごとの g にまとめる(data-net = 接続の番号)
+  const netG=new Map();
+  const gOf=id=>{ if(!netG.has(id)) netG.set(id, el('g',{class:'wire','data-net':id},g)); return netG.get(id); };
+  for(const w of R.wires){
+    const gw=gOf(w.net), d=`M${w[0]*U},${w[1]*U} L${w[2]*U},${w[3]*U}`;
+    el('path',{d, class:'ln'},gw);
+    el('path',{d, class:'hit screen-only'},gw);   // クリックしやすい太い当たり判定(保存・印刷には出さない)
+  }
+  for(const d of R.dots) el('circle',{cx:d[0]*U, cy:d[1]*U, r:3, class:'fill'},gOf(d.net));
+  R.pwr.forEach((p,i)=>{
+    const gp=el('g',{class:'wire pw','data-net':p.net.id,'data-pw':i},g);
+    drawPower(gp,p);
+    // 当たり判定: 端子から記号と電圧の文字まで
+    const [dx,dy]=p.dir, x=p.x*U, y=p.y*U, tw= p.net.power==='GND'? 0 : textWidth(p.net.power,12);
+    const far= dx!==0? U+8+tw+6 : U+(p.net.power==='GND'? 10 : 20);
+    const x0= dx>0? x : dx<0? x-far : x-Math.max(12,tw/2+2), x1= dx>0? x+far : dx<0? x : x+Math.max(12,tw/2+2);
+    const y0= dy>0? y : dy<0? y-far : y-12, y1= dy>0? y+far : dy<0? y : y+12;
+    el('rect',{x:x0, y:y0, width:x1-x0, height:y1-y0, class:'hit screen-only'},gp);
+  });
   for(const n of R.netLabels){
     const x=n.x*U+n.dir[0]*4, y=n.y*U+n.dir[1]*4;
-    txt(g, x, y, n.text, {class:'net','text-anchor': n.dir[0]<0?'end': n.dir[0]>0?'start':'middle','dominant-baseline': n.dir[1]<0?'auto': n.dir[1]>0?'hanging':'central'});
+    txt(gOf(n.net), x, y, n.text, {class:'net','text-anchor': n.dir[0]<0?'end': n.dir[0]>0?'start':'middle','dominant-baseline': n.dir[1]<0?'auto': n.dir[1]>0?'hanging':'central'});
   }
   for(const c of L.comps){
     const gs=el('g',{class:'sym','data-id':c.inst.name},g);
@@ -1255,7 +1275,7 @@ return {parse, analyze, layout, route, build, renderSVG, renderPage, PAGE, BUILT
    ===================================================================== */
 const $=s=>document.querySelector(s);
 const srcEl=$('#src'), viewEl=$('#view'), msgEl=$('#msg'), editEl=$('#edit');
-let result=null, selectedId=null, svgEl=null, stale=false;
+let result=null, selectedId=null, selectedNet=null, svgEl=null, stale=false;   // selectedNet = {net: 接続の番号, pw: 電源記号の番号 または null}
 
 const SAMPLE=`# Arduino で LED を点け、超音波センサーで距離を測り、マイクで音を拾う回路
 # 機種は part で定義します(使うピンだけ書いても構いません)
@@ -1325,7 +1345,9 @@ function render(){
   else { svgEl=CIRC.renderSVG(r.L, r.R); viewEl.classList.remove('paged'); }
   viewEl.appendChild(svgEl);
   viewEl.querySelectorAll('.sym').forEach(g=>g.addEventListener('click', ev=>{ ev.stopPropagation(); select(g.getAttribute('data-id')); }));
+  viewEl.querySelectorAll('.wire').forEach(g=>g.addEventListener('click', ev=>{ ev.stopPropagation(); const pw=g.getAttribute('data-pw'); selectNet(+g.getAttribute('data-net'), pw===null? null : +pw); }));
   if(selectedId){ const gs=viewEl.querySelectorAll(`[data-id="${selectedId}"]`); if(gs.length) gs.forEach(g=>g.classList.add('selected')); else selectedId=null; }
+  selectedNet=null;   // 接続の番号は描き直すと変わるので、選択を外す
   const nParts=r.model.insts.length, nNets=r.A.nets.filter(n=>n.pins.length>1).length;
   let html='';
   if(r.R.issues.length) html+=`<div class="err">内部の配置検査で ${r.R.issues.length} 件の問題(ツールの不具合です。報告してください): ${esc(r.R.issues[0])}</div>`;
@@ -1385,13 +1407,41 @@ function lineRange(n){ const v=srcEl.value; let s=0; for(let i=1;i<n;i++){ s=v.i
 function gotoLine(n){ const r=lineRange(n); if(!r) return; srcEl.focus(); srcEl.setSelectionRange(r[0],r[1]); const lh=19.5; srcEl.scrollTop=Math.max(0,(n-3)*lh); syncScroll(); }
 function select(id){
   if(stale) return;
-  selectedId=id;
-  viewEl.querySelectorAll('.sym.selected').forEach(g=>g.classList.remove('selected'));
+  selectedId=id; selectedNet=null;
+  viewEl.querySelectorAll('.selected').forEach(g=>g.classList.remove('selected'));
   if(id) viewEl.querySelectorAll(`[data-id="${id}"]`).forEach(g=>g.classList.add('selected'));
   updateEdit();
 }
+// 線・電源記号のクリック: その接続の線をすべて強調し、書いた行を編集パネルに出す
+function selectNet(net, pw){
+  if(stale) return;
+  selectedId=null; selectedNet={net, pw};
+  viewEl.querySelectorAll('.selected').forEach(g=>g.classList.remove('selected'));
+  viewEl.querySelectorAll(`.wire[data-net="${net}"]`).forEach(g=>g.classList.add('selected'));
+  updateEdit();
+}
+// 接続を書いた行(つなぐ文のうち、その接続のピン・名前・連鎖の部品を含む行)。owner を渡すとその端子を書いた行だけ
+function netLines(net, owner){
+  const A=result.A, lines=new Set();
+  for(const ch of result.model.chains){
+    for(const it of ch.items){
+      let hit=false;
+      if(owner){
+        if(it.k==='pin') hit= it.inst.name===owner.inst && it.pin===owner.pin;
+        else if(it.k==='el') hit= it.inst.name===owner.inst;
+      } else {
+        if(it.k==='pin') hit= A.netOf(it.inst,it.pin)===net;
+        else if(it.k==='el') hit= it.inst.def.pins.some(q=>A.netOf(it.inst,q.name)===net);
+        else hit= net.names.includes(it.name);
+      }
+      if(hit){ lines.add(ch.line); break; }
+    }
+  }
+  return [...lines].sort((a,b)=>a-b);
+}
 function updateEdit(){
   editEl.innerHTML=''; editEl.classList.remove('on');
+  if(selectedNet && result){ updateEditNet(); return; }
   if(!selectedId || !result) return;
   const I=result.model.insts.find(i=>i.name===selectedId);
   if(!I) return;
@@ -1411,6 +1461,26 @@ function updateEdit(){
   const ctl=add('');
   const b1=document.createElement('button'); b1.textContent='テキストのこの行へ'; b1.addEventListener('click',()=>gotoLine(I.line)); ctl.appendChild(b1);
   const b2=document.createElement('button'); b2.textContent='閉じる'; b2.addEventListener('click',()=>select(null)); ctl.appendChild(b2);
+}
+
+function updateEditNet(){
+  const net=result.A.nets.find(n=>n.id===selectedNet.net);
+  if(!net) return;
+  const p= selectedNet.pw!==null? result.R.pwr[selectedNet.pw] : null;
+  const owner= p && p.owner;
+  editEl.classList.add('on');
+  const add=(html)=>{ const d=document.createElement('div'); d.className='grp'; d.innerHTML=html; editEl.appendChild(d); return d; };
+  const pins=net.pins.map(q=>q.inst+'.'+q.pin);
+  const head= owner? `電源 ${esc(net.power)}(${esc(owner.inst+'.'+owner.pin)} につながる記号)`
+            : net.power? `電源 ${esc(net.power)} の接続`
+            : net.names.length? `接続 ${esc(net.names.join(' / '))}`
+            : `接続 ${esc(pins.slice(0,4).join('・'))}${pins.length>4? ' ほか':''}`;
+  add(`<span class="kind">${head}</span>`);
+  const lines=netLines(net, owner);
+  const ctl=add(lines.length? '<span class="small">書いた行:</span>' : '<span class="small">この接続を書いた行はありません</span>');
+  for(const n of lines){ const b=document.createElement('button'); b.textContent=n+' 行目'; b.addEventListener('click',()=>gotoLine(n)); ctl.appendChild(b); }
+  const c2=add('');
+  const b2=document.createElement('button'); b2.textContent='閉じる'; b2.addEventListener('click',()=>select(null)); c2.appendChild(b2);
 }
 
 /* ---- 保存・読込 ---- */

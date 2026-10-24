@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  回路図 — テキスト記法から回路図を描く単一 HTML ツール(記号は日本式(高校の教科書などで使われる形)と米国式から選べる)
+  回路図 — テキスト記法から回路図を描く単一 HTML ツール(記号は日本式(高校の教科書などで使われる形)・JIS/IEC・米国式から選べる)
   https://circuit.sapp.jp
 
   MIT License
@@ -105,7 +105,7 @@ footer a{color:#777}
     <option value="print">印刷 / PDF</option>
   </select>
   <label><input type="checkbox" id="optAllPins"> 使っていないピンも表示</label>
-  <label>記号 <select id="optStyle"><option value="jp">日本式</option><option value="us">米国式</option></select></label>
+  <label>記号 <select id="optStyle"><option value="jp">日本式</option><option value="iec">JIS/IEC</option><option value="us">米国式</option></select></label>
   <label>用紙 <select id="optPage"><option value="">なし</option><option value="A4P">A4 縦</option><option value="A4L">A4 横</option></select></label>
   <span class="sp"></span>
   <button id="btnSample">例を読み込む</button>
@@ -122,7 +122,7 @@ footer a{color:#777}
     <div id="edit"></div>
   </div>
 </main>
-<footer>回路図 — テキスト記法から回路図を描きます。記号は日本式(高校の教科書などで使われる形)と米国式から選べます。単一 HTML、データはどこにも送信されません。MIT License, Copyright (c) 2026 Kouta Sekine. <a href="https://sapp.jp" target="_blank" rel="noopener">S Apps</a></footer>
+<footer>回路図 — テキスト記法から回路図を描きます。記号は日本式(高校の教科書などで使われる形)・JIS/IEC・米国式から選べます。単一 HTML、データはどこにも送信されません。MIT License, Copyright (c) 2026 Kouta Sekine. <a href="https://sapp.jp" target="_blank" rel="noopener">S Apps</a></footer>
 
 <dialog id="dlgHelp"></dialog>
 
@@ -1027,7 +1027,8 @@ function txt(parent, x, y, s, attrs){ const t=el('text', Object.assign({x, y}, a
 const SVG_STYLE=`.shape{fill:#fff;stroke:#000;stroke-width:1.5}.ln{fill:none;stroke:#000;stroke-width:1.5}.thick{fill:none;stroke:#000;stroke-width:4}.fill{fill:#000;stroke:none}.lbl{font-size:12px}.pin{font-size:12px}.ttl{font-size:13px;font-weight:600}.net{font-size:12px;fill:#000}.frame{fill:none;stroke:#bbb;stroke-width:1}.hit{fill:transparent;stroke:transparent;stroke-width:10}`;
 
 // 2 端子の記号(中心 0,0、横向き、s=+1 なら pins[0] が左)
-// style: 'jp' 日本式(JIS C 0617 を基本に、わかりやすさを優先した形)、'us' 米国式(米国の現場でよく見る形。IEEE 315・IEEE 91)
+// style: 'jp' 日本式(JIS C 0617 を基本に、わかりやすさを優先した形)、'iec' JIS/IEC(JIS C 0617 = IEC 60617 の図記号どおり)、
+//        'us' 米国式(米国の現場でよく見る形。IEEE 315・IEEE 91)
 function drawElement(g, sym, s, rot, style){
   const us= style==='us';
   // 縦向き(rot)のときも記号の中の文字は横書きのまま
@@ -1048,17 +1049,17 @@ function drawElement(g, sym, s, rot, style){
         el('path',{d:`M${s*7},-10 Q${s*1},0 ${s*7},10`, class:'ln'},g);
         T(s*-9, -6, '+', {'text-anchor':'middle','font-size':12});
         return;
-      case 'ZD':   // 棒の両端を逆向きに曲げた Z に近い形
+      case 'ZD':   // 棒の両端を逆向きに曲げた Z に近い形(IEEE 315 8.5.6.1 Style 2: 上端はカソード側、下端はアノード側へ)
         L([[-20,0],[20,0]]);
         el('path',{d:`M${s*-8},-8 L${s*-8},8 L${s*8},0 Z`, class:'ln'},g);
-        L([[s*4,-8],[s*8,-8],[s*8,8],[s*12,8]]);
+        L([[s*12,-8],[s*8,-8],[s*8,8],[s*4,8]]);
         return;
       case 'PB':   // 2 つの端子の上に棒と軸(4.7.1)
         L([[-20,0],[-12.5,0]]); L([[12.5,0],[20,0]]);
         el('circle',{cx:-10,cy:0,r:2.5,class:'shape'},g); el('circle',{cx:10,cy:0,r:2.5,class:'shape'},g);
         L([[-12,-6],[12,-6]]); L([[0,-6],[0,-15]]);
         return;
-      case 'LAMP':   // 円の中にフィラメントの輪(11.1.4)
+      case 'LAMP':   // 円の中にフィラメントの輪(IEEE 315 11.1.4 を、導線が左右から入る一直線の形にした変形)
         el('circle',{cx:0,cy:0,r:13,class:'shape'},g); lead(13);
         el('path',{d:'M-13,0 L-5,0 C-5,-11 5,-11 5,0 L13,0', class:'ln'},g);
         return;
@@ -1073,7 +1074,7 @@ function drawElement(g, sym, s, rot, style){
     case 'D': case 'LED': case 'ZD': {
       L([[-20,0],[20,0]]);   // 導線は三角形の中を通す(JIS C 0617-5 05-03-01)
       el('path',{d:`M${s*-8},-8 L${s*-8},8 L${s*8},0 Z`, class:'ln'},g);
-      if(sym==='ZD') L([[s*4,-8],[s*8,-8],[s*8,8]]);   // 棒の片端だけを折る(05-03-06)
+      if(sym==='ZD') L([[s*8,-8],[s*8,8],[s*4,8]]);   // 棒の下端だけをアノード側へ折る(05-03-06 を横向きにした形)
       else L([[s*8,-8],[s*8,8]]);
       if(sym==='LED'){ arrow(s*-1,-9,s*6,-17); arrow(s*5,-9,s*12,-17); }
       break; }
@@ -1088,14 +1089,15 @@ function drawElement(g, sym, s, rot, style){
       }
       break;
     case 'LAMP': el('circle',{cx:0,cy:0,r:13,class:'shape'},g); lead(13); L([[-9.2,-9.2],[9.2,9.2]]); L([[-9.2,9.2],[9.2,-9.2]]); break;
-    case 'AM': circle('A'); T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); break;
-    case 'VM': circle('V'); T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); break;
+    // 計器: JIS/IEC は円に A・V だけ(08-02-01)。日本式・米国式はわかりやすさのため + 印を付ける
+    case 'AM': circle('A'); if(style!=='iec') T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); break;
+    case 'VM': circle('V'); if(style!=='iec') T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); break;
     case 'M': circle('M'); break;
   }
 }
 
 // MOS FET・オペアンプ・論理ゲート(中心 0,0、px)
-function drawFixed(g, c){
+function drawFixed(g, c, style){
   const sym=c.inst.def.sym;
   const P=(d,cls,extra)=>el('path',Object.assign({d, class:cls||'ln'},extra||{}),g);
   if(isMOS(sym)){
@@ -1112,7 +1114,16 @@ function drawFixed(g, c){
     P('M-3,0 L10,0 L10,10');                                       // サブストレート(ソースへ)
     const n=sym[0]==='N';
     const pts= n? [[-3,0],[4,-3.5],[4,3.5]] : [[9,0],[2,-3.5],[2,3.5]];
-    el('polygon',{points:pts.map(p=>p.join(',')).join(' '), class:'fill'},g);
+    if(style==='iec') P(`M${pts[1].join(',')} L${pts[0].join(',')} L${pts[2].join(',')}`);   // JIS/IEC は開いた矢じり(05-05-11〜16)
+    else el('polygon',{points:pts.map(p=>p.join(',')).join(' '), class:'fill'},g);
+    return;
+  }
+  if(sym==='OPAMP' && style==='iec'){
+    // 演算増幅器 IEC 60617 S01782(JIS C 0617-13 13-09-01): 長方形に ▷∞。入力の順はほかの流儀と同じ(+ が上)
+    P('M-30,-20 L30,-20 L30,20 L-30,20 Z','shape');
+    txt(g, -23, -10, '+', {'text-anchor':'middle','dominant-baseline':'central','font-size':13});
+    txt(g, -23, 10, '−', {'text-anchor':'middle','dominant-baseline':'central','font-size':13});
+    txt(g, 6, -9, '▷∞', {'text-anchor':'middle','dominant-baseline':'central','font-size':13});
     return;
   }
   if(sym==='OPAMP'){
@@ -1122,6 +1133,19 @@ function drawFixed(g, c){
     return;
   }
   const bubble=x=>el('circle',{cx:x, cy:0, r:4, class:'shape'},g);
+  if(style==='iec'){
+    // 論理素子 IEC 60617(JIS C 0617-12): 長方形に限定記号。否定は出力の丸(12-07-01)
+    // OR ≥1(12-27-01)、AND &(12-27-02)、XOR =1(12-27-09)、NOT 1(12-27-11)、NAND(12-28-01)、NOR(12-28-02)
+    const q={AND:'&', NAND:'&', OR:'≥1', NOR:'≥1', XOR:'=1', NOT:'1'}[sym];
+    const neg= sym==='NAND'||sym==='NOR'||sym==='NOT';
+    // 箱は縦長、限定記号は上端の中央(JIS C 0617-12 の図の配置)
+    const h= sym==='NOT'? 14 : 15, w=12;
+    P(sym==='NOT'? `M-30,0 L${-w},0` : `M-30,-10 L${-w},-10 M-30,10 L${-w},10`);
+    P(`M${-w},${-h} L${w},${-h} L${w},${h} L${-w},${h} Z`,'shape');
+    txt(g, 0, -h+8, q, {'text-anchor':'middle','dominant-baseline':'central','font-size':12});
+    if(neg){ bubble(w+4); P(`M${w+8},0 L30,0`); } else P(`M${w},0 L30,0`);
+    return;
+  }
   if(sym==='NOT'){
     P('M-30,0 L-15,0 M21,0 L30,0');
     P('M-15,-12 L13,0 L-15,12 Z','shape'); bubble(17);
@@ -1220,7 +1244,7 @@ function drawScene(g, L, R){
       lines.forEach(([t,cls],i)=>txt(gs, cx, cy+(i-(lines.length-1)/2)*16, t, {'text-anchor':'middle','dominant-baseline':'central', class:cls}));
     } else if(c.fix){
       const gi=el('g',{transform:`translate(${c.x*U},${c.y*U})`},gs);
-      drawFixed(gi, c);
+      drawFixed(gi, c, L.style);
       const b=c.fix.body;
       el('rect',{x:b.x0, y:b.y0, width:b.x1-b.x0, height:b.y1-b.y0, fill:'transparent'},gi);
       const {x,y,anchor}=c.fix.label, v=c.inst.value;
@@ -1238,16 +1262,23 @@ function drawScene(g, L, R){
       else { el('path',{d:'M-20,0 L-18,0 M18,0 L20,0', class:'ln'},gi); el('rect',{x:-18, y:-6, width:36, height:12, class:'shape'},gi); }   // 端子(±20)から長方形(±18)までの線
       // しゅう動接点の矢印: 米国式はギザギザの中心(高さ 0)まで届かせる
       const tip= L.style==='us'? -1 : -6;
-      el('path',{d:`M0,-20 L0,${tip-6}`, class:'ln'},gi);
-      el('polygon',{points:`0,${tip} -3.5,${tip-7} 3.5,${tip-7}`, class:'fill'},gi);
+      if(L.style==='iec'){
+        // JIS/IEC: 横から来て下に折れる L 字形の矢印(04-01-05)。端子(上の中央)から左へ出て、抵抗器へ下ろす
+        el('path',{d:'M0,-20 L-8,-20 L-8,-12', class:'ln'},gi);
+        el('polygon',{points:'-8,-6 -11.5,-13 -4.5,-13', class:'fill'},gi);
+      } else {
+        el('path',{d:`M0,-20 L0,${tip-6}`, class:'ln'},gi);
+        el('polygon',{points:`0,${tip} -3.5,${tip-7} 3.5,${tip-7}`, class:'fill'},gi);
+      }
       el('rect',{x:-20, y:-22, width:40, height:32, fill:'transparent'},gi);
       txt(gi, 0, c.inst.value? 24 : 26, c.inst.name, {'text-anchor':'middle', class:'ttl'});
       if(c.inst.value) txt(gi, 0, 38, c.inst.value, {'text-anchor':'middle', class:'lbl'});
     } else if(c.kind==='tr'){
       const gi=el('g',{transform:`translate(${c.x*U},${c.y*U})`},gs);
-      if(L.style==='us') el('rect',{x:-22, y:-22, width:44, height:44, fill:'transparent'},gi);   // 米国式は円なし(当たり判定だけ置く)
+      if(L.style==='us'||L.style==='iec') el('rect',{x:-22, y:-22, width:44, height:44, fill:'transparent'},gi);   // IEC(05-05-01)・米国式は円なし(当たり判定だけ置く)
       else el('circle',{cx:0, cy:0, r:22, class:'shape'},gi);
-      el('path',{d:'M-22,0 L-7,0', class:'ln'},gi);   // ベースの線は円の縁から(円の白い塗りが外の配線を隠すので)
+      // ベースの線: 円があるときは円の縁から(円の白い塗りが外の配線を隠すので)、円がないときは端子から
+      el('path',{d: L.style==='jp'? 'M-22,0 L-7,0' : 'M-20,0 L-7,0', class:'ln'},gi);
       el('path',{d:'M-7,-11 L-7,11', class:'ln', style:'stroke-width:2.5'},gi);
       el('path',{d:'M-7,-5 L10,-14 L10,-20', class:'ln'},gi);
       el('path',{d:'M-7,5 L10,14 L10,20', class:'ln'},gi);
@@ -1255,7 +1286,9 @@ function drawScene(g, L, R){
       const out=c.inst.def.sym==='NPN';
       const [ax,ay,bx,by]= out? [-7,5,8,13] : [10,14,-5,6];
       const ang=Math.atan2(by-ay,bx-ax), a=7, w=3.5;
-      el('polygon',{points:[[bx,by],[bx-a*Math.cos(ang)+w*Math.sin(ang), by-a*Math.sin(ang)-w*Math.cos(ang)],[bx-a*Math.cos(ang)-w*Math.sin(ang), by-a*Math.sin(ang)+w*Math.cos(ang)]].map(p=>p.join(',')).join(' '), class:'fill'},gi);
+      const p1=[bx-a*Math.cos(ang)+w*Math.sin(ang), by-a*Math.sin(ang)-w*Math.cos(ang)], p2=[bx-a*Math.cos(ang)-w*Math.sin(ang), by-a*Math.sin(ang)+w*Math.cos(ang)];
+      if(L.style==='iec') el('path',{d:`M${p1.join(',')} L${bx},${by} L${p2.join(',')}`, class:'ln'},gi);   // JIS/IEC は開いた矢じり(05-05-01)
+      else el('polygon',{points:[[bx,by],p1,p2].map(p=>p.join(',')).join(' '), class:'fill'},gi);
       txt(gi, 28, c.inst.value? -5 : 0, c.inst.name, {'dominant-baseline':'central', class:'ttl'});
       if(c.inst.value) txt(gi, 28, 10, c.inst.value, {'dominant-baseline':'central', class:'lbl'});
     }
@@ -1559,7 +1592,7 @@ function setSource(text){
   if(!ok || srcEl.value!==text) srcEl.value=text;
   selectedId=null; render();
 }
-function applyOptions(o){ if(!o) return; $('#optAllPins').checked=!!o.allPins; $('#optPage').value=o.page||''; $('#optStyle').value= ['jp','us'].includes(o.style)? o.style : 'jp'; }
+function applyOptions(o){ if(!o) return; $('#optAllPins').checked=!!o.allPins; $('#optPage').value=o.page||''; $('#optStyle').value= ['jp','iec','us'].includes(o.style)? o.style : 'jp'; }
 function openFile(file){
   if(/\.png$/i.test(file.name)){ alert('PNG は開けません(図の画像だけで、元のテキストを含みません)。JSON、SVG、.txt のいずれかを開いてください。'); return; }
   if(!/\.(txt|json|svg)$/i.test(file.name)){ alert('開けるのは .txt、.json、回路図で保存した .svg です: '+file.name); return; }
@@ -1607,7 +1640,7 @@ $('#btnHelp').addEventListener('click', ()=>{
 </table>
 <h3>連鎖</h3>
 <p>ピンが 2 本の部品(<code>NOT</code> ゲートを除く)は <code>U1.D13 -- R1 -- D1 -- GND</code> のように、ピンを書かずに連鎖の途中に置けます。連鎖の入る側が下の表のピン一覧の 1 番目(極性のある部品ではアノード・+)になります。逆向きに使うときや連鎖の端では <code>D1.K</code> のようにピンで書きます。部品名だけで書けるのは 1 つの部品につき 1 回です。トランジスタ・ボリューム・MOS FET・オペアンプ・論理ゲート(<code>NOT</code> も含む)は、いつも <code>Q1.B</code>・<code>VR1.2</code>・<code>U1.OUT</code> のようにピンで書きます。ボリューム(<code>POT</code>)のピン <code>2</code> がしゅう動接点(真ん中の足)です。オペアンプの電源のピン <code>V+</code>・<code>V-</code> は省略でき、つないだときだけ描きます(例 <code>U1.V+ -- 12V</code>、<code>U1.V- -- -12V</code> で電源の電圧が図に出ます)。論理ゲートは MIL 記号で描きます。</p>
-<h3>組み込みの部品(記号は日本式(高校の教科書などで使われる形)と米国式から、画面上部の「記号」で選べます)</h3>
+<h3>組み込みの部品(記号は日本式(高校の教科書などで使われる形)・JIS/IEC・米国式から、画面上部の「記号」で選べます)</h3>
 <table><tr><th>種類</th><th>部品</th><th>ピン(1 番目が連鎖の入る側)</th></tr>${rows}</table>
 <h3>警告</h3>
 <p>図は描いたうえで、次の場合に警告を出します。部品の両端が電源・GND に直接つながっていて向きが判断できるときの極性の誤り(LED・ダイオード・ツェナーダイオードの順方向の直結、LED の逆向き、電解コンデンサの逆向き)、端子の付け忘れ、1 回しか書かれていない接続の名前(書き間違いの疑い)、部品の両端の短絡、電源どうしの短絡、<code>place</code> で同じ連鎖の中の部品どうしを指定したとき(その指定は使われません)。</p>

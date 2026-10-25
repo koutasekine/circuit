@@ -1394,15 +1394,37 @@ V1.- -- L1.2
 
 function opts(){ return {allPins:$('#optAllPins').checked, style:$('#optStyle').value}; }
 
+/* ---- ブラウザへの自動保存(localStorage。このパソコンのこのブラウザの中だけに残り、外へは送らない) ---- */
+const KEY_DOC='circuit.sapp:doc';   // テキストと設定をまとめて 1 つのキーに保存する
+const STORE_WARN={save:'', tab:''};
+function storeWarnHtml(){ return [STORE_WARN.save, STORE_WARN.tab].filter(Boolean).map(t=>`<div class="warn">${esc(t)}</div>`).join(''); }
+function saveDoc(){
+  let ok=false;
+  try{ localStorage.setItem(KEY_DOC, JSON.stringify(docJSON())); ok=true; }catch(e){}
+  STORE_WARN.save= ok? '' : 'ブラウザへの自動保存に失敗しました(容量超過や、保存を許可しない設定など)。残したい内容は「保存…」でファイルに保存してください';
+  return ok;
+}
+function loadDoc(){
+  try{ const d=JSON.parse(localStorage.getItem(KEY_DOC)||'null'); return d && typeof d.source==='string' ? d : null; }catch(e){ return null; }
+}
+// 別のタブで同じ回路図が編集されたら知らせる(後から保存した方が残るため)
+window.addEventListener('storage', e=>{
+  if(e.key===KEY_DOC && e.newValue!==null){
+    STORE_WARN.tab='別のタブでこの回路図が編集されました。このタブで続けると、そちらの内容は上書きされます';
+    msgEl.insertAdjacentHTML('afterbegin', `<div class="warn">${esc(STORE_WARN.tab)}</div>`);
+  }
+});
+
 function render(){
   const text=srcEl.value;
   highlight(text); syncScroll();
+  saveDoc();
   msgEl.innerHTML='';
   let r;
   try{ r=CIRC.build(text, opts()); }
   catch(e){
-    if(e instanceof CIRC.ParseError) msgEl.innerHTML=`<div class="err">${e.line} 行目: ${esc(e.message)}</div>`;
-    else { msgEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; console.error(e); }
+    if(e instanceof CIRC.ParseError) msgEl.innerHTML=storeWarnHtml()+`<div class="err">${e.line} 行目: ${esc(e.message)}</div>`;
+    else { msgEl.innerHTML=storeWarnHtml()+`<div class="err">${esc(e.message)}</div>`; console.error(e); }
     stale=true; editEl.classList.remove('on'); viewEl.classList.add('stale');
     return;
   }
@@ -1417,7 +1439,7 @@ function render(){
   if(selectedId){ const gs=viewEl.querySelectorAll(`[data-id="${selectedId}"]`); if(gs.length) gs.forEach(g=>g.classList.add('selected')); else selectedId=null; }
   selectedNet=null;   // 接続の番号は描き直すと変わるので、選択を外す
   const nParts=r.model.insts.length, nNets=r.A.nets.filter(n=>n.pins.length>1).length;
-  let html='';
+  let html=storeWarnHtml();
   if(r.R.issues.length) html+=`<div class="err">内部の配置検査で ${r.R.issues.length} 件の問題(ツールの不具合です。報告してください): ${esc(r.R.issues[0])}</div>`;
   for(const w of r.A.warns) html+=`<div class="warn">警告: ${esc(w)}</div>`;
   for(const w of (r.L.warns||[])) html+=`<div class="warn">警告: ${esc(w)}</div>`;
@@ -1654,6 +1676,8 @@ $('#btnHelp').addEventListener('click', ()=>{
   d.showModal();
 });
 
+// 前に開いていたときの内容(テキストと設定)を、このブラウザの保存から戻す
+{ const d=loadDoc(); if(d){ srcEl.value=d.source; applyOptions(d.options); } }
 render();
 </script>
 </body>

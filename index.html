@@ -1397,7 +1397,7 @@ function opts(){ return {allPins:$('#optAllPins').checked, style:$('#optStyle').
 /* ---- ブラウザへの自動保存(localStorage。このパソコンのこのブラウザの中だけに残り、外へは送らない) ---- */
 const KEY_DOC='circuit.sapp:doc';   // テキストと設定をまとめて 1 つのキーに保存する
 const STORE_WARN={save:'', tab:''};
-function storeWarnHtml(){ return [STORE_WARN.save, STORE_WARN.tab].filter(Boolean).map(t=>`<div class="warn">${esc(t)}</div>`).join(''); }
+function storeWarnHtml(){ return [STORE_WARN.save, STORE_WARN.tab].filter(Boolean).map(t=>`<div class="warn"${t===STORE_WARN.tab?' data-tabwarn':''}>${esc(t)}</div>`).join(''); }
 function saveDoc(){
   let ok=false;
   try{ localStorage.setItem(KEY_DOC, JSON.stringify(docJSON())); ok=true; }catch(e){}
@@ -1411,7 +1411,8 @@ function loadDoc(){
 window.addEventListener('storage', e=>{
   if(e.key===KEY_DOC && e.newValue!==null){
     STORE_WARN.tab='別のタブでこの回路図が編集されました。このタブで続けると、そちらの内容は上書きされます';
-    msgEl.insertAdjacentHTML('afterbegin', `<div class="warn">${esc(STORE_WARN.tab)}</div>`);
+    // 既に出ていれば足さない(相手が入力するたびに届くため)
+    if(!msgEl.querySelector('[data-tabwarn]')) msgEl.insertAdjacentHTML('afterbegin', `<div class="warn" data-tabwarn>${esc(STORE_WARN.tab)}</div>`);
   }
 });
 
@@ -1472,12 +1473,13 @@ function isTypePos(text, i){ const ls=text.lastIndexOf('\n', i-1)+1; return /^\s
 function syncScroll(){ hlEl.scrollTop=srcEl.scrollTop; hlEl.scrollLeft=srcEl.scrollLeft; }
 srcEl.addEventListener('scroll', syncScroll);
 let timer=null;
-srcEl.addEventListener('input', ()=>{ highlight(srcEl.value); clearTimeout(timer); timer=setTimeout(render, 200); });
+// 自動保存は描画を待たずに入力のたびに行う(描画前にタブを閉じても最後の入力が残るように)
+srcEl.addEventListener('input', ()=>{ highlight(srcEl.value); saveDoc(); clearTimeout(timer); timer=setTimeout(render, 200); });
 function insertText(t){
   srcEl.focus();
   let ok=false; try{ ok=document.execCommand('insertText', false, t); }catch(e){}
   if(!ok){ const s=srcEl.selectionStart, e=srcEl.selectionEnd; srcEl.value=srcEl.value.slice(0,s)+t+srcEl.value.slice(e); srcEl.selectionStart=srcEl.selectionEnd=s+t.length; }
-  highlight(srcEl.value); clearTimeout(timer); timer=setTimeout(render, 200);
+  highlight(srcEl.value); if(!ok) saveDoc(); clearTimeout(timer); timer=setTimeout(render, 200);
 }
 srcEl.addEventListener('keydown', e=>{
   if(e.isComposing || e.keyCode===229) return;
@@ -1614,7 +1616,7 @@ function setSource(text){
   if(!ok || srcEl.value!==text) srcEl.value=text;
   selectedId=null; render();
 }
-function applyOptions(o){ if(!o) return; $('#optAllPins').checked=!!o.allPins; $('#optPage').value=o.page||''; $('#optStyle').value= ['jp','iec','us'].includes(o.style)? o.style : 'jp'; }
+function applyOptions(o){ if(!o) return; $('#optAllPins').checked=!!o.allPins; $('#optPage').value= ['','A4P','A4L'].includes(o.page)? o.page : ''; $('#optStyle').value= ['jp','iec','us'].includes(o.style)? o.style : 'jp'; }
 function openFile(file){
   if(/\.png$/i.test(file.name)){ alert('PNG は開けません(図の画像だけで、元のテキストを含みません)。JSON、SVG、.txt のいずれかを開いてください。'); return; }
   if(!/\.(txt|json|svg)$/i.test(file.name)){ alert('開けるのは .txt、.json、回路図で保存した .svg です: '+file.name); return; }

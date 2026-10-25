@@ -569,6 +569,8 @@ function layout(model, A, opts){
   const pwrItem=(I,p)=>{ const n=A.netOf(I,p); return n.power? {k:'net', name:n.power} : null; };
   for(const I of model.insts) if(I.kind==='el' && !inRow.has(I)) rows.push({els:[{inst:I, flip:false}], orphan:true, start:pwrItem(I,I.def.pins[0].name), end:pwrItem(I,I.def.pins[1].name)});
   for(const r of rows){ for(const e of r.els) e.hl=elHalf(e.inst); r.len=r.els.reduce((a,e)=>a+2*e.hl,0); }
+  const V=opts.lay||{};   // 配置の候補(build の optimize が指定する。ふだんは空)
+  rows.forEach((r,i)=>{ if(V.labDown && V.labDown[i]) r.labDown=true; });
 
   const itemPower=it=>{ if(!it) return null; const n= it.k==='pin'? A.netOf(it.inst,it.pin) : it.k==='net'? A.nets.find(z=>z.names.includes(it.name)) : null; return n&&n.power? n.power : null; };
   const powExt=(it, vert)=>{ const p=itemPower(it); if(!p) return 1; if(p==='GND') return vert? 3 : 2; return vert? 4 : 3+Math.ceil(textWidth(p,12)/U); };
@@ -580,7 +582,7 @@ function layout(model, A, opts){
       for(const e of r.els){ const w=Math.max(textWidth(e.inst.name,12), textWidth(e.inst.value||'',12)); lab=Math.max(lab, Math.ceil(w/2/U)-e.hl+1); }
       const eS=powExt(r.start,false), eE=powExt(r.end,false);
       const extL= dx>0? eS : eE, extR= dx>0? eE : eS;
-      return {x0:Math.min(sx,ex)-extL-lab, x1:Math.max(sx,ex)+extR+lab, y0:sy-ROW_UP, y1:sy+ROW_DN};
+      return {x0:Math.min(sx,ex)-extL-lab, x1:Math.max(sx,ex)+extR+lab, y0:sy-(r.labDown?ROW_DN:ROW_UP), y1:sy+(r.labDown?ROW_UP:ROW_DN)};
     }
     let lw=0, h=0;
     for(const e of r.els){ lw=Math.max(lw, textWidth(e.inst.name,12), textWidth(e.inst.value||'',12)); h=Math.max(h, SYM_H[e.inst.def.sym]||9); }
@@ -662,24 +664,33 @@ function layout(model, A, opts){
   // 残りの箱: 右の列
   const colX=Math.max(rx0, ...slots.map(s=>s.x1))+6;
   let colY= main? Math.min(...slots.map(s=>s.y0)) : 0;
+  const colLX=Math.min(0, ...slots.map(s=>s.x0))-6;   // 左の列(候補で左を選んだ箱)
+  let colLY=colY;
   for(const I of boxes){
     if(I===main) continue;
     const sh=shapeOf.get(I);
-    let want=null;
+    const left= V.side && V.side[I.name]==='L';
+    // つながる先の高さにそろえる。そろえるピンは候補で選べる(既定は最初のピン)
+    const cands=[];
     for(const q of sh.pins){
       const n=A.netOf(I,q.p.name);
       if(n.power) continue;
-      for(const o of n.pins){ if(o.inst===I.name) continue; const ps=pos.get(o.inst+'.'+o.pin); if(ps){ want=ps.y-(sh.kind==='box'? q.ey : q.ly0??q.ly); break; } }
-      if(want!==null) break;
+      // 箱のピンの端は付け根(ey)から 2 マス外(上下のピンは高さも 2 ずれる)
+      for(const o of n.pins){ if(o.inst===I.name) continue; const ps=pos.get(o.inst+'.'+o.pin); if(ps){ cands.push(ps.y-(sh.kind==='box'? q.ey+2*q.dy : q.ly0??q.ly)); break; } }
     }
-    let lext= sh.kind==='box'? 3+pwrExt(sh,'left') : 6;
-    if(sh.fix){ sh.x=0; sh.y=0; lext=Math.max(lext, 1-boxRect(sh).x0); }
-    const x=colX+lext;
-    const ys=seqDown(want===null? colY : Math.max(want, Math.min(...slots.map(s=>s.y0))));
+    const want= cands.length? cands[Math.min(cands.length-1, (V.align&&V.align[I.name])||0)] : null;
+    let x;
+    if(left){ sh.x=0; sh.y=0; x=colLX-boxRect(sh).x1; }
+    else {
+      let lext= sh.kind==='box'? 3+pwrExt(sh,'left') : 6;
+      if(sh.fix){ sh.x=0; sh.y=0; lext=Math.max(lext, 1-boxRect(sh).x0); }
+      x=colX+lext;
+    }
+    const ys=seqDown(want===null? (left? colLY : colY) : Math.max(want, Math.min(...slots.map(s=>s.y0))));
     let placed=false;
     for(const y of ys){ sh.x=x; sh.y=y; if(free(boxRect(sh))){ placeShape(sh,x,y); placed=true; break; } }
     if(!placed) placeShape(sh, x, Math.max(...slots.map(s=>s.y1))+4);
-    colY=sh.slot.y1+2;
+    if(left) colLY=sh.slot.y1+2; else colY=sh.slot.y1+2;
     placeAttached(sh);
   }
   for(const r of rows) if(!r.placed) placeH(r, rx0, 1, seqDown(Math.max(0,...slots.map(s=>s.y1))+ROW_UP+2));
@@ -740,12 +751,12 @@ function route(L, A, model){
   const net=(I,p)=>A.netOf(I,p);
   for(const c of comps){
     if(c.kind==='el'){
-      const I=c.inst, h=SYM_H[I.def.sym]||9;
+      const I=c.inst, h=SYM_H[I.def.sym]||9, r=c.row;
       const lw=Math.max(textWidth(I.name,12), I.value? textWidth(I.value,12):0);
       if(!c.vert){
         blocks.push({x0:(c.cx-c.hl+1)*U, x1:(c.cx+c.hl-1)*U, y0:c.cy*U-h, y1:c.cy*U+h});
-        // ラベル: 名前と値を記号の上に 2 段で
-        const vy=c.cy*U-h-6, ny= I.value? vy-14 : vy;
+        // ラベル: 名前と値を記号の上に 2 段で(候補で下を選んだ行は下に)
+        const vy= r.labDown? c.cy*U+h+(I.value?30:16) : c.cy*U-h-6, ny= I.value? vy-14 : vy;
         labels.push({x:c.cx*U, y:ny, text:I.name, anchor:'middle', owner:c});
         if(I.value) labels.push({x:c.cx*U, y:vy, text:I.value, anchor:'middle', owner:c});
         blocks.push({x0:c.cx*U-lw/2, x1:c.cx*U+lw/2, y0:ny-11, y1:vy+3});
@@ -757,7 +768,6 @@ function route(L, A, model){
         if(I.value) labels.push({x:lx, y:ny+14, text:I.value, anchor:'start', owner:c});
         blocks.push({x0:lx, x1:lx+lw, y0:ny-11, y1:ny+(I.value?17:3)});
       }
-      const r=c.row;
       c.terms.forEach((t,i)=>{
         const n=net(I,t.pin);
         const inner= c.vert? [t.x, t.y+(i===0?1:-1)] : [t.x+(i===0?1:-1), t.y];
@@ -766,7 +776,7 @@ function route(L, A, model){
         if(n.power){
           const atStart=(t.x===r.sx && t.y===r.sy), atEnd=(t.x===r.ex && t.y===r.ey);
           let dir;
-          if(!r.vert) dir= n.power==='GND'? [0,1] : atStart? [-r.dx,0] : atEnd? [r.dx,0] : [0,1];   // 途中の電源は下向き(上には部品の名前と値がある)
+          if(!r.vert) dir= n.power==='GND'? (r.labDown && atStart? [-r.dx,0] : r.labDown && atEnd? [r.dx,0] : [0,1]) : atStart? [-r.dx,0] : atEnd? [r.dx,0] : r.labDown? [0,-1] : [0,1];   // 途中の電源は名前と値の反対側へ。名前と値が下の行の端の接地は、1 単位出してから下へ曲げる
           else dir= atStart? [0,-r.dy] : atEnd? [0,r.dy] : [1,0];
           const key='pw:'+t.x+','+t.y;
           if(!pwr.some(p=>p.key===key)) pwr.push({key, net:n, x:t.x, y:t.y, dir, owner:{inst:I.name, pin:t.pin}});
@@ -1014,7 +1024,18 @@ function route(L, A, model){
       if(y>gy0 && eV[i-W]>=0 && !isPre[2*(i-W)+1]) issues.push(`線が記号の範囲 (${x},${y}) を通る`);
     }
   }
-  return {wires, dots, pwr, labels, netLabels, failed, issues:[...new Set(issues)], bounds:{x0:gx0+6,y0:gy0+6,x1:gx1-6,y1:gy1-6}};
+  // 見た目の点数(配置の候補を比べるのに使う。小さいほどよい): 線の長さ + 曲がり 3 + 横切り 4、引けない接続・自己検査の問題は大きく減点
+  let score=failed.length*200 + issues.length*1000;
+  for(let i=0;i<N;i++){
+    const x=i%W+gx0, y=Math.floor(i/W)+gy0;
+    if(eH[i]>=0 && !isPre[2*i]) score++;
+    if(eV[i]>=0 && !isPre[2*i+1]) score++;
+    const o=[edgeAt(x,y,0),edgeAt(x,y,1),edgeAt(x,y,2),edgeAt(x,y,3)];
+    const ms=new Set(o.filter(m=>m>=0));
+    if(ms.size>1) score+=4;
+    for(const m of ms){ const ds=[0,1,2,3].filter(d=>o[d]===m); if(ds.length===2 && (ds[0]+ds[1])%2===1) score+=3; }
+  }
+  return {wires, dots, pwr, labels, netLabels, failed, issues:[...new Set(issues)], score, bounds:{x0:gx0+6,y0:gy0+6,x1:gx1-6,y1:gy1-6}};
 }
 
 /* =====================================================================
@@ -1036,6 +1057,8 @@ function drawElement(g, sym, s, rot, style){
   const L=(pts,cls)=>el('path',{d:'M'+pts.map(p=>p.join(',')).join(' L'), class:cls||'ln'},g);
   const lead=(a)=>{ L([[-20,0],[-a,0]]); L([[a,0],[20,0]]); };
   const arrow=(x1,y1,x2,y2)=>{ L([[x1,y1],[x2,y2]]); const ang=Math.atan2(y2-y1,x2-x1), a=6, w=3; const p=[[x2,y2],[x2-a*Math.cos(ang)+w*Math.sin(ang), y2-a*Math.sin(ang)-w*Math.cos(ang)],[x2-a*Math.cos(ang)-w*Math.sin(ang), y2-a*Math.sin(ang)+w*Math.cos(ang)]]; el('polygon',{points:p.map(q=>q.join(',')).join(' '), class:'fill'},g); };
+  // 計器の +: 横向きは円の左上。縦向きは円の左外(図の上で x=-10、+ 側の端寄り)。部品と一緒に回すと円の中の文字に重なるため
+  const meterPlus=()=>{ if(rot) T(s*-18, 10, '+', {'text-anchor':'middle','dominant-baseline':'central','font-size':11}); else T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); };
   const circle=(letter)=>{ el('circle',{cx:0,cy:0,r:13,class:'shape'},g); lead(13); if(letter) T(0,0.5,letter,{'text-anchor':'middle','dominant-baseline':'central','font-size':14}); };
   // 米国式の抵抗: ギザギザ(IEEE 315 2.1.1)
   const zigzag=()=>{ lead(18); L([[-18,0],[-15,-6],[-9,6],[-3,-6],[3,6],[9,-6],[15,6],[18,0]]); el('rect',{x:-18,y:-7,width:36,height:14,fill:'transparent'},g); };
@@ -1090,8 +1113,8 @@ function drawElement(g, sym, s, rot, style){
       break;
     case 'LAMP': el('circle',{cx:0,cy:0,r:13,class:'shape'},g); lead(13); L([[-9.2,-9.2],[9.2,9.2]]); L([[-9.2,9.2],[9.2,-9.2]]); break;
     // 計器: JIS/IEC は円に A・V だけ(08-02-01)。日本式・米国式はわかりやすさのため + 印を付ける
-    case 'AM': circle('A'); if(style!=='iec') T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); break;
-    case 'VM': circle('V'); if(style!=='iec') T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); break;
+    case 'AM': circle('A'); if(style!=='iec') meterPlus(); break;
+    case 'VM': circle('V'); if(style!=='iec') meterPlus(); break;
     case 'M': circle('M'); break;
   }
 }
@@ -1330,9 +1353,48 @@ function renderPage(L, R, size){
 function build(text, opts){
   const model=parse(text);
   const A=analyze(model);
-  const L=layout(model, A, opts||{});
-  const R=route(L, A, model);
+  opts=opts||{};
+  let L=layout(model, A, opts);
+  let R=route(L, A, model);
+  if(opts.optimize) ({L, R}=optimizeLayout(model, A, opts, L, R));
   return {model, A, L, R};
+}
+
+// 配置の候補を 1 つずつ試し、点数(route の score)が下がるものだけを採る。試す回数に上限を置く(時間ではなく回数なので、どの機械でも同じ図になる)
+function optimizeLayout(model, A, opts, L0, R0){
+  const vars=[];
+  const boxes=model.insts.filter(I=>I.kind!=='el');
+  const placedBoxes=L0.comps.filter(c=>c.kind!=='el' && c.inst);
+  const mainBox=placedBoxes[0] && placedBoxes[0].inst;
+  for(const I of boxes){
+    if(I===mainBox) continue;
+    vars.push({k:'side', name:I.name, vals:['L']});
+    const n=I.def.pins.filter(p=>{ const z=A.netOf(I,p.name); return !z.power && z.pins.length>1; }).length;
+    if(n>1) vars.push({k:'align', name:I.name, vals:[1,2].filter(v=>v<n)});
+  }
+  L0.rows.forEach((r,i)=>{
+    if(!r.placed || r.vert) return;
+    // 途中に接地がある行は名前と値を下にしない(接地記号は下向きにしか描かないため)
+    const midGnd=r.els.some(e=>e.comp && e.comp.terms.some(t=>{ const z=A.netOf(e.inst,t.pin); const end=(t.x===r.sx&&t.y===r.sy)||(t.x===r.ex&&t.y===r.ey); return z.power==='GND' && !end; }));
+    if(!midGnd) vars.push({k:'labDown', name:i, vals:[true]});
+  });
+  // 比べる点数: 線の点数 + 図の大きさ(√面積、格子単位)。大きさを入れないと、線のために図が横に広がりやすい
+  const cost=R=>{ const b=R.bounds; return R.score + Math.sqrt((b.x1-b.x0)*(b.y1-b.y0)); };
+  let best={L:L0, R:R0, lay:{side:{}, align:{}, labDown:{}}, c:cost(R0)}, evals=0;
+  const MAXEVAL=opts.optimize>1? opts.optimize : 24;
+  for(const v of vars){
+    for(const val of v.vals){
+      if(evals>=MAXEVAL) return best;
+      const lay={side:{...best.lay.side}, align:{...best.lay.align}, labDown:{...best.lay.labDown}};
+      lay[v.k][v.name]=val;
+      evals++;
+      let L, R;
+      try{ L=layout(model, A, Object.assign({}, opts, {lay})); R=route(L, A, model); }catch(e){ continue; }
+      const c=cost(R);
+      if(c<best.c) best={L, R, lay, c};
+    }
+  }
+  return best;
 }
 
 return {parse, analyze, layout, route, build, renderSVG, renderPage, PAGE, BUILTIN, ParseError, powerVolt};
@@ -1392,7 +1454,7 @@ V1.+ -- L1.1
 V1.- -- L1.2
 `;
 
-function opts(){ return {allPins:$('#optAllPins').checked, style:$('#optStyle').value}; }
+function opts(){ return {allPins:$('#optAllPins').checked, style:$('#optStyle').value, optimize:24}; }   // optimize: 置き方の候補を最大 24 回試して、線の曲がり・交差が少ないものを選ぶ
 
 /* ---- ブラウザへの自動保存(localStorage。このパソコンのこのブラウザの中だけに残り、外へは送らない) ---- */
 const KEY_DOC='circuit.sapp:doc';   // テキストと設定をまとめて 1 つのキーに保存する

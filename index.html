@@ -45,6 +45,8 @@ button,select,label.btn{font:inherit;padding:4px 10px;border:1px solid #bbb;bord
 button:hover,label.btn:hover{background:#f0f0ee}
 button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 button:disabled{opacity:.45;cursor:default}
+.fname{font-size:13px;color:#444;max-width:16em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stat{font-size:12px;color:#2a6b2a}
 main{flex:1;display:flex;min-height:0}
 #left{width:38%;min-width:260px;display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--panel)}
 #splitter{width:6px;cursor:col-resize;background:var(--line)}
@@ -95,15 +97,18 @@ footer a{color:#777}
 <header>
   <h1>回路図</h1>
   <button id="btnNew">新規</button>
-  <label class="btn">開く<input type="file" id="fileOpen" accept=".txt,.json,.svg" style="display:none"></label>
-  <select id="saveAs">
-    <option value="">保存…</option>
-    <option value="json">JSON</option>
-    <option value="svg">SVG</option>
+  <button id="btnOpen" title="テキスト(.txt)、JSON、回路図で書き出した SVG を開く">開く</button><input type="file" id="fileOpen" accept=".txt,.json,.svg" style="display:none">
+  <button id="btnSave" title="開いているファイルに上書き保存(Ctrl+S。まだファイルがないときは保存先を選ぶ)">上書き保存</button>
+  <button id="btnSaveAs" title="保存先とファイル名を選んでテキスト(.txt)を保存">別名で保存</button>
+  <select id="exportAs" title="図を画像などで書き出す">
+    <option value="">書き出し…</option>
+    <option value="svg" title="テキストと設定を埋め込むので、このアプリで開き直せる">SVG</option>
     <option value="png">PNG</option>
-    <option value="txt">テキスト(.txt)</option>
+    <option value="json" title="テキストと記号・用紙などの設定をまとめたもの">JSON</option>
     <option value="print">印刷 / PDF</option>
   </select>
+  <span id="fileName" class="fname"></span>
+  <span id="stat" class="stat" role="status"></span>
   <label><input type="checkbox" id="optAllPins"> 使っていないピンも表示</label>
   <label>記号 <select id="optStyle"><option value="jp">日本式</option><option value="iec">JIS/IEC</option><option value="us">米国式</option></select></label>
   <label>用紙 <select id="optPage"><option value="">なし</option><option value="A4P">A4 縦</option><option value="A4L">A4 横</option></select></label>
@@ -517,28 +522,30 @@ function layout(model, A, opts){
     for(const q of sh.pins){ if(sh.kind==='box' && q.side!==side) continue; const n=A.netOf(sh.inst,q.p.name); if(n.power) e=Math.max(e, n.power==='GND'? 2 : 2+Math.ceil(textWidth(n.power,12)/U)); }
     return e;
   };
+  // 電源記号の場所を範囲に含める(トランジスタ・ボリューム・オペアンプ・ゲートなど、箱以外の形)
+  function addPowerRect(sh, rc){
+    for(const q of sh.pins){
+      const n=A.netOf(sh.inst,q.p.name); if(!n.power) continue;
+      const e= n.power==='GND'? 2 : 2+Math.ceil(textWidth(n.power,12)/U);
+      const st= sh.fix? powerStagger(sh.inst, sh.pins, q, A.netOf) : 0;
+      const px=sh.x+(q.lx0??q.lx)+q.dx*(e+1+st), py=sh.y+(q.ly0??q.ly)+q.dy*(e+1);
+      const gnd= n.power==='GND' && q.dy===0 ? 3 : 0;   // 横向きの接地は 1 単位出して下へ曲げる
+      rc.x0=Math.min(rc.x0, px); rc.x1=Math.max(rc.x1, px); rc.y0=Math.min(rc.y0, py-1); rc.y1=Math.max(rc.y1, py+1+gnd);
+    }
+    return rc;
+  }
   function boxRect(sh){
     if(sh.fix){
       const lb=fixLabelBox(sh.inst.def.sym, sh.inst), r=sh.fix.rect;
-      const rc={x0:sh.x+Math.min(r.x0, Math.floor(lb.x0/U)-1), x1:sh.x+Math.max(r.x1, Math.ceil(lb.x1/U)+1), y0:sh.y+Math.min(r.y0, Math.floor(lb.y0/U)-1), y1:sh.y+Math.max(r.y1, Math.ceil(lb.y1/U)+1)};
-      // 電源記号の場所
-      for(const q of sh.pins){
-        const n=A.netOf(sh.inst,q.p.name); if(!n.power) continue;
-        const e= n.power==='GND'? 2 : 2+Math.ceil(textWidth(n.power,12)/U);
-        const st=powerStagger(sh.inst, sh.pins, q, A.netOf);
-        const px=sh.x+(q.lx0??q.lx)+q.dx*(e+1+st), py=sh.y+(q.ly0??q.ly)+q.dy*(e+1);
-        const gnd= n.power==='GND' && q.dy===0 ? 3 : 0;   // 横向きの接地は 1 単位出して下へ曲げる
-        rc.x0=Math.min(rc.x0, px); rc.x1=Math.max(rc.x1, px); rc.y0=Math.min(rc.y0, py-1); rc.y1=Math.max(rc.y1, py+1+gnd);
-      }
-      return rc;
+      return addPowerRect(sh, {x0:sh.x+Math.min(r.x0, Math.floor(lb.x0/U)-1), x1:sh.x+Math.max(r.x1, Math.ceil(lb.x1/U)+1), y0:sh.y+Math.min(r.y0, Math.floor(lb.y0/U)-1), y1:sh.y+Math.max(r.y1, Math.ceil(lb.y1/U)+1)});
     }
     if(sh.kind==='tr' && sh.inst.def.sym==='POT'){
       const lw=Math.ceil(Math.max(textWidth(sh.inst.name,13), textWidth(sh.inst.value||'',12))/2/U);
-      return {x0:sh.x-5-Math.max(0,lw-4), x1:sh.x+5+Math.max(0,lw-4), y0:sh.y-7, y1:sh.y+6};
+      return addPowerRect(sh, {x0:sh.x-5-Math.max(0,lw-4), x1:sh.x+5+Math.max(0,lw-4), y0:sh.y-7, y1:sh.y+6});
     }
     if(sh.kind==='tr'){
       const lw=Math.ceil(Math.max(textWidth(sh.inst.name,13), textWidth(sh.inst.value||'',12))/U);
-      return {x0:sh.x-5, x1:sh.x+4+lw, y0:sh.y-7, y1:sh.y+7};
+      return addPowerRect(sh, {x0:sh.x-5, x1:sh.x+4+lw, y0:sh.y-7, y1:sh.y+7});
     }
     return {x0:sh.x-2-pwrExt(sh,'left')-1, x1:sh.x+sh.w+2+pwrExt(sh,'right')+1, y0:sh.y-2-pwrExt(sh,'top')-1, y1:sh.y+sh.h+2+pwrExt(sh,'bottom')+1};
   }
@@ -588,7 +595,13 @@ function layout(model, A, opts){
     for(const e of r.els){ lw=Math.max(lw, textWidth(e.inst.name,12), textWidth(e.inst.value||'',12)); h=Math.max(h, SYM_H[e.inst.def.sym]||9); }
     const eS=powExt(r.start,true), eE=powExt(r.end,true);
     const extT= dy>0? eS : eE, extB= dy>0? eE : eS;
-    return {x0:sx-2, x1:sx+Math.ceil((h+8+lw)/U)+1, y0:Math.min(sy,ey)-extT, y1:Math.max(sy,ey)+extB};
+    // 途中の電源(隣り合う部品が共有する電源)は左に描くので、その分を空ける
+    let extL=2;
+    for(let j=0;j+1<r.els.length;j++){
+      const a=r.els[j].inst, b=r.els[j+1].inst;
+      for(const p of a.def.pins){ const n=A.netOf(a,p.name); if(n.power && b.def.pins.some(q=>A.netOf(b,q.name)===n)) extL=Math.max(extL, n.power==='GND'? 4 : 3+Math.ceil(textWidth(n.power,12)/U)); }
+    }
+    return {x0:sx-extL, x1:sx+Math.ceil((h+8+lw)/U)+1, y0:Math.min(sy,ey)-extT, y1:Math.max(sy,ey)+extB};
   }
   function fixRow(r, sx, sy, dx, dy){
     Object.assign(r, {sx, sy, dx, dy, vert:dy!==0, ex:sx+dx*r.len, ey:sy+dy*r.len, placed:true});
@@ -777,9 +790,11 @@ function route(L, A, model){
           const atStart=(t.x===r.sx && t.y===r.sy), atEnd=(t.x===r.ex && t.y===r.ey);
           let dir;
           if(!r.vert) dir= n.power==='GND'? (r.labDown && atStart? [-r.dx,0] : r.labDown && atEnd? [r.dx,0] : [0,1]) : atStart? [-r.dx,0] : atEnd? [r.dx,0] : r.labDown? [0,-1] : [0,1];   // 途中の電源は名前と値の反対側へ。名前と値が下の行の端の接地は、1 単位出してから下へ曲げる
-          else dir= atStart? [0,-r.dy] : atEnd? [0,r.dy] : [1,0];
+          else dir= atStart? [0,-r.dy] : atEnd? [0,r.dy] : [-1,0];   // 縦の行の途中の電源は左へ(右には部品の名前と値がある)
           const key='pw:'+t.x+','+t.y;
-          if(!pwr.some(p=>p.key===key)) pwr.push({key, net:n, x:t.x, y:t.y, dir, owner:{inst:I.name, pin:t.pin}});
+          // 縦の行の途中の接地は横向きのまま左に描く(下へ曲げると、すぐ下の部品やその + の印に重なる)
+          const side= r.vert && !atStart && !atEnd;
+          if(!pwr.some(p=>p.key===key)) pwr.push({key, net:n, x:t.x, y:t.y, dir, onBox:side, owner:{inst:I.name, pin:t.pin}});
         } else addTerm(n, t.x, t.y);
         const atRowEnd=(t.x===r.sx && t.y===r.sy)||(t.x===r.ex && t.y===r.ey);
         if(atRowEnd && !n.power) keep.push({x:2*t.x-inner[0], y:2*t.y-inner[1], net:n});
@@ -1057,8 +1072,9 @@ function drawElement(g, sym, s, rot, style){
   const L=(pts,cls)=>el('path',{d:'M'+pts.map(p=>p.join(',')).join(' L'), class:cls||'ln'},g);
   const lead=(a)=>{ L([[-20,0],[-a,0]]); L([[a,0],[20,0]]); };
   const arrow=(x1,y1,x2,y2)=>{ L([[x1,y1],[x2,y2]]); const ang=Math.atan2(y2-y1,x2-x1), a=6, w=3; const p=[[x2,y2],[x2-a*Math.cos(ang)+w*Math.sin(ang), y2-a*Math.sin(ang)-w*Math.cos(ang)],[x2-a*Math.cos(ang)-w*Math.sin(ang), y2-a*Math.sin(ang)+w*Math.cos(ang)]]; el('polygon',{points:p.map(q=>q.join(',')).join(' '), class:'fill'},g); };
-  // 計器の +: 横向きは円の左上。縦向きは円の左外(図の上で x=-10、+ 側の端寄り)。部品と一緒に回すと円の中の文字に重なるため
-  const meterPlus=()=>{ if(rot) T(s*-18, 10, '+', {'text-anchor':'middle','dominant-baseline':'central','font-size':11}); else T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); };
+  // 計器の +: 横向きは円の左上。縦向きは円の左斜め外(図の上で x=-11、+ 側へ 13)。部品と一緒に回すと円の中の文字に重なるため。
+  // 縦の行の途中の電源記号(左に出る)とぶつからないよう、円の近くに置く
+  const meterPlus=()=>{ if(rot) T(s*-13, 11, '+', {'text-anchor':'middle','dominant-baseline':'central','font-size':11}); else T(s*-17, -6, '+', {'text-anchor':'middle','font-size':11}); };
   const circle=(letter)=>{ el('circle',{cx:0,cy:0,r:13,class:'shape'},g); lead(13); if(letter) T(0,0.5,letter,{'text-anchor':'middle','dominant-baseline':'central','font-size':14}); };
   // 米国式の抵抗: ギザギザ(IEEE 315 2.1.1)
   const zigzag=()=>{ lead(18); L([[-18,0],[-15,-6],[-9,6],[-3,-6],[3,6],[9,-6],[15,6],[18,0]]); el('rect',{x:-18,y:-7,width:36,height:14,fill:'transparent'},g); };
@@ -1456,14 +1472,32 @@ V1.- -- L1.2
 
 function opts(){ return {allPins:$('#optAllPins').checked, style:$('#optStyle').value, optimize:24}; }   // optimize: 置き方の候補を最大 24 回試して、線の曲がり・交差が少ないものを選ぶ
 
+/* ---- 開いているファイルの状態 ---- */
+let fileName='';        // 開いている・保存したテキストのファイル名(なければ空)
+let fileBase='circuit'; // 書き出すときの名前のもと(拡張子なし)
+let fileHandle=null;    // 上書き保存の先(Chrome・Edge のファイル操作機能。開き直すと忘れる)
+let savedText='';       // 最後に保存した(開いた)内容。null は「保存していない変更がある」
+let editGen=0;          // 内容の入れ替えの世代(保存の書き込み中に別の内容に替わったかを見分ける)
+const baseOf=name=>name.replace(/\.[^.]*$/,'') || 'circuit';
+function isDirty(){ return savedText===null || srcEl.value!==savedText; }
+function showName(){ const e=$('#fileName'); const d=isDirty() && srcEl.value.trim()!==''; e.textContent=(fileName||'(名前なし)')+(d?' *':''); e.title= d? '保存していない変更があります' : ''; }
+// 内容を入れ替える(新規・開く・例)。o: {name, handle, base}
+function setDoc(text, o){
+  editGen++;
+  fileName=o.name||''; fileHandle=o.handle||null; if(o.base) fileBase=o.base;
+  setSource(text);
+  savedText=srcEl.value;
+  showName(); saveDoc();
+}
+
 /* ---- ブラウザへの自動保存(localStorage。このパソコンのこのブラウザの中だけに残り、外へは送らない) ---- */
 const KEY_DOC='circuit.sapp:doc';   // テキストと設定をまとめて 1 つのキーに保存する
 const STORE_WARN={save:'', tab:''};
 function storeWarnHtml(){ return [STORE_WARN.save, STORE_WARN.tab].filter(Boolean).map(t=>`<div class="warn"${t===STORE_WARN.tab?' data-tabwarn':''}>${esc(t)}</div>`).join(''); }
 function saveDoc(){
   let ok=false;
-  try{ localStorage.setItem(KEY_DOC, JSON.stringify(docJSON())); ok=true; }catch(e){}
-  STORE_WARN.save= ok? '' : 'ブラウザへの自動保存に失敗しました(容量超過や、保存を許可しない設定など)。残したい内容は「保存…」でファイルに保存してください';
+  try{ localStorage.setItem(KEY_DOC, JSON.stringify(Object.assign(docJSON(), {file:{name:fileName, base:fileBase, dirty:isDirty()}}))); ok=true; }catch(e){}
+  STORE_WARN.save= ok? '' : 'ブラウザへの自動保存に失敗しました(容量超過や、保存を許可しない設定など)。残したい内容は「上書き保存」か「別名で保存」でファイルに保存してください';
   return ok;
 }
 function loadDoc(){
@@ -1536,7 +1570,7 @@ function syncScroll(){ hlEl.scrollTop=srcEl.scrollTop; hlEl.scrollLeft=srcEl.scr
 srcEl.addEventListener('scroll', syncScroll);
 let timer=null;
 // 自動保存は描画を待たずに入力のたびに行う(描画前にタブを閉じても最後の入力が残るように)
-srcEl.addEventListener('input', ()=>{ highlight(srcEl.value); saveDoc(); clearTimeout(timer); timer=setTimeout(render, 200); });
+srcEl.addEventListener('input', ()=>{ highlight(srcEl.value); showName(); saveDoc(); clearTimeout(timer); timer=setTimeout(render, 200); });
 function insertText(t){
   srcEl.focus();
   let ok=false; try{ ok=document.execCommand('insertText', false, t); }catch(e){}
@@ -1644,7 +1678,7 @@ function updateEditNet(){
 /* ---- 保存・読込 ---- */
 function download(name, blob){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 function docJSON(){ return {app:'回路図', url:'https://circuit.sapp.jp', version:1, source:srcEl.value, options:{allPins:$('#optAllPins').checked, page:$('#optPage').value, style:$('#optStyle').value}}; }
-function baseName(){ return 'circuit'; }
+function baseName(){ return fileBase; }
 function svgText(){
   if(!svgEl) return null;
   const clone=svgEl.cloneNode(true);
@@ -1655,11 +1689,10 @@ function svgText(){
   clone.insertBefore(meta, clone.firstChild);
   return '<?xml version="1.0" encoding="UTF-8"?>\n<!-- 回路図 (https://circuit.sapp.jp) で作成。metadata に元のテキストを含み、このファイルを回路図で開くと編集を続けられます -->\n'+new XMLSerializer().serializeToString(clone);
 }
-$('#saveAs').addEventListener('change', ()=>{
-  const v=$('#saveAs').value; $('#saveAs').value='';
+$('#exportAs').addEventListener('change', ()=>{
+  const v=$('#exportAs').value; $('#exportAs').value='';
   if(!v) return;
   if(v==='print'){ window.print(); return; }
-  if(v==='txt'){ download(baseName()+'.txt', new Blob([srcEl.value],{type:'text/plain'})); return; }
   if(v==='json'){ download(baseName()+'.json', new Blob([JSON.stringify(docJSON(),null,2)],{type:'application/json'})); return; }
   if(!svgEl || stale){ alert('図がありません(エラーを直してください)'); return; }
   if(v==='svg'){ download(baseName()+'.svg', new Blob([svgText()],{type:'image/svg+xml'})); return; }
@@ -1679,10 +1712,10 @@ function setSource(text){
   selectedId=null; render();
 }
 function applyOptions(o){ if(!o) return; $('#optAllPins').checked=!!o.allPins; $('#optPage').value= ['','A4P','A4L'].includes(o.page)? o.page : ''; $('#optStyle').value= ['jp','iec','us'].includes(o.style)? o.style : 'jp'; }
-function openFile(file){
-  if(/\.png$/i.test(file.name)){ alert('PNG は開けません(図の画像だけで、元のテキストを含みません)。JSON、SVG、.txt のいずれかを開いてください。'); return; }
-  if(!/\.(txt|json|svg)$/i.test(file.name)){ alert('開けるのは .txt、.json、回路図で保存した .svg です: '+file.name); return; }
-  if(srcEl.value.trim()!=='' && !confirm('書いている内容を「'+file.name+'」で置き換えますか?')) return;
+function openFile(file, handle, handleP){
+  if(/\.png$/i.test(file.name)){ alert('PNG は開けません(図の画像だけで、元のテキストを含みません)。.txt、JSON、SVG のいずれかを開いてください。'); return; }
+  if(!/\.(txt|json|svg)$/i.test(file.name)){ alert('開けるのは .txt、.json、回路図で書き出した .svg です: '+file.name); return; }
+  const isTxt=/\.txt$/i.test(file.name);
   const r=new FileReader();
   r.onload=()=>{
     const t=r.result;
@@ -1690,22 +1723,102 @@ function openFile(file){
       let src, opts=null;
       if(/\.json$/i.test(file.name)){ const j=JSON.parse(t); if(typeof j.source!=='string') throw 0; src=j.source; opts=j.options; }
       else if(/\.svg$/i.test(file.name)){ const m=/<metadata[^>]*id="circuit-source"[^>]*>([\s\S]*?)<\/metadata>/.exec(t); if(!m) throw 0; const j=JSON.parse(m[1].replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&amp;/g,'&')); if(typeof j.source!=='string') throw 0; src=j.source; opts=j.options; }
-      else src=t;
+      else src=t.replace(/^﻿/,'');
       applyOptions(opts);
-      setSource(src);
+      // 上書き保存の先にするのはテキスト(.txt)だけ(JSON・SVG は書き出しの形式なので、次の上書き保存で保存先を尋ねる)
+      setDoc(src, {name: isTxt? file.name : '', handle: isTxt? handle : null, base: baseOf(file.name)});
+      // ドロップで開いたときは、上書きの先を後から受け取る(受け取る前に編集や別のファイルに替わっていれば使わない)
+      const g=editGen;
+      if(handleP && isTxt) handleP.then(h=>{ if(h && h.kind==='file' && editGen===g) fileHandle=h; }).catch(()=>{});
     }catch(e){ alert('このファイルは回路図で開けません: '+file.name); }
   };
   r.readAsText(file);
 }
-$('#fileOpen').addEventListener('change', e=>{ if(e.target.files[0]) openFile(e.target.files[0]); e.target.value=''; });
+$('#btnOpen').addEventListener('click', async ()=>{
+  if(!okToDiscard()) return;
+  if(!FS_OK){ $('#fileOpen').click(); return; }
+  try{ const [h]=await window.showOpenFilePicker(PICK_OPEN); openFile(await h.getFile(), h); }
+  catch(e){ if(!e || e.name!=='AbortError') $('#fileOpen').click(); }
+});
+$('#fileOpen').addEventListener('change', e=>{ if(e.target.files[0]) openFile(e.target.files[0], null); e.target.value=''; });
 // ファイルのドラッグだけを受け付ける(テキスト欄での文字のドラッグは邪魔しない)
 const isFileDrag=e=>e.dataTransfer && [...(e.dataTransfer.types||[])].includes('Files');
 ['dragenter','dragover'].forEach(ev=>window.addEventListener(ev, e=>{ if(!isFileDrag(e)) return; e.preventDefault(); $('#drop').classList.add('on'); }));
 window.addEventListener('dragleave', e=>{ if(!isFileDrag(e)) return; e.preventDefault(); if(e.relatedTarget===null) $('#drop').classList.remove('on'); });
-window.addEventListener('drop', e=>{ if(!isFileDrag(e)) return; e.preventDefault(); $('#drop').classList.remove('on'); const f=e.dataTransfer.files[0]; if(f) openFile(f); });
-function loadSample(s){ if(srcEl.value.trim()==='' || confirm('書いている内容を例で置き換えますか?')){ srcEl.value=s; selectedId=null; render(); return true; } return false; }
-$('#btnNew').addEventListener('click', ()=>{ if(srcEl.value.trim()==='' || confirm('書いている内容を消して新規作成しますか?')){ srcEl.value=''; selectedId=null; render(); } });
+window.addEventListener('drop', e=>{
+  if(!isFileDrag(e)) return; e.preventDefault(); $('#drop').classList.remove('on');
+  const f=e.dataTransfer.files[0]; if(!f) return;
+  // 上書きの先にするため、ファイルの扱いを受け取る(Chrome・Edge。ドロップの処理の中で呼ぶ必要がある)
+  const it=e.dataTransfer.items && e.dataTransfer.items[0];
+  const hp= it && typeof it.getAsFileSystemHandle==='function' ? it.getAsFileSystemHandle() : null;
+  if(!okToDiscard()) return;
+  openFile(f, null, hp);
+});
+function loadSample(s){ if(okToDiscard()){ setDoc(s, {base:'circuit'}); return true; } return false; }
+$('#btnNew').addEventListener('click', ()=>{ if(okToDiscard()) setDoc('', {base:'circuit'}); });
 $('#btnSample').addEventListener('click', ()=>loadSample(SAMPLE));
+
+/* ---- テキストのファイル: 上書き保存・別名で保存(プロジェクト計画・シンプルスライドと同じ作り) ----
+   正本はテキスト(.txt)。Chrome・Edge はファイル操作機能で、開いたファイルにそのまま上書きする。ない場合はダウンロードで保存する */
+const FS_OK= typeof window.showOpenFilePicker==='function' && typeof window.showSaveFilePicker==='function';
+const PICK_OPEN={types:[{description:'回路図のテキスト・JSON・SVG', accept:{'text/plain':['.txt'], 'application/json':['.json'], 'image/svg+xml':['.svg']}}]};
+const PICK_SAVE={types:[{description:'回路図のテキスト', accept:{'text/plain':['.txt']}}]};
+let statT=null, saving=false;
+function setStat(t){ const e=$('#stat'); e.textContent=t; clearTimeout(statT); if(t) statT=setTimeout(()=>{ e.textContent=''; }, 4000); }
+function okToDiscard(){ return !isDirty() || srcEl.value.trim()==='' || confirm('保存していない変更があります。破棄して続けますか?'); }
+const stamp=()=>{ const d=new Date(); return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); };
+function downloadText(name){ download(name, new Blob([srcEl.value],{type:'text/plain;charset=utf-8'})); }
+async function writeTo(h, text){ const w=await h.createWritable(); await w.write(text); await w.close(); }
+function setSaving(v){ saving=v; $('#btnSave').disabled=v; $('#btnSaveAs').disabled=v; }
+// 書き込んだ内容を「保存済み」とする(書き込み中に編集されていれば、その分は未保存のまま)
+function savedAs(text, msg){ savedText=text; showName(); saveDoc(); setStat(srcEl.value===text? msg : msg+'。保存中に変わった内容はまだ保存されていません'); }
+async function saveAsFile(){
+  if(saving) return;
+  if(FS_OK){
+    let h;
+    try{ h=await window.showSaveFilePicker(Object.assign({suggestedName: fileName || fileBase+'.txt'}, PICK_SAVE)); }
+    catch(e){ if(e && e.name==='AbortError') return; h=null; }
+    if(h){
+      const gen=editGen, text=srcEl.value;
+      setSaving(true);
+      try{
+        await writeTo(h, text);
+        // 書き込み中に「開く」「新規」などで別の内容に替わったときは、今の内容の保存先は変えない
+        if(editGen===gen){ fileHandle=h; fileName=h.name; fileBase=baseOf(h.name); savedAs(text, h.name+' に保存しました('+stamp()+')'); }
+        return;
+      }catch(e){ setStat('保存先に書き込めなかったので、ダウンロードで保存しました'); }
+      finally{ setSaving(false); }
+    } else setStat('保存先を選べなかったので、ダウンロードで保存しました');
+  }
+  let name=prompt('ファイル名', fileName || fileBase+'.txt');
+  if(name===null) return;
+  name=name.trim() || fileBase+'.txt';
+  if(!/\.txt$/i.test(name)) name+='.txt';
+  const text=srcEl.value;
+  downloadText(name);
+  fileName=name; fileBase=baseOf(name);
+  savedAs(text, name+' をダウンロードしました');
+}
+async function saveFile(){
+  if(saving) return;
+  if(FS_OK && fileHandle){
+    const gen=editGen, text=srcEl.value, h=fileHandle;
+    setSaving(true);
+    try{ await writeTo(h, text); if(editGen===gen) savedAs(text, h.name+' に上書き保存しました('+stamp()+')'); }
+    catch(e){ if(!e || e.name!=='AbortError') setStat('上書きできませんでした。「別名で保存」を使ってください'); }
+    finally{ setSaving(false); }
+    return;
+  }
+  if(FS_OK || !fileName){ saveAsFile(); return; }
+  // ファイル操作機能がないブラウザ: 同じ名前でダウンロードする
+  const text=srcEl.value;
+  downloadText(fileName);
+  savedAs(text, fileName+' をダウンロードしました');
+}
+$('#btnSave').addEventListener('click', saveFile);
+$('#btnSaveAs').addEventListener('click', saveAsFile);
+// Ctrl+S(Mac では ⌘S)で上書き保存
+window.addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase()==='s'){ e.preventDefault(); saveFile(); } });
 /* ---- 分割バーの移動 ---- */
 (()=>{ const sp=$('#splitter'), left=$('#left'); let drag=false; sp.addEventListener('mousedown',()=>{drag=true;document.body.style.userSelect='none';}); window.addEventListener('mouseup',()=>{drag=false;document.body.style.userSelect='';}); window.addEventListener('mousemove',e=>{ if(drag) left.style.width=Math.max(200,e.clientX)+'px'; }); })();
 
@@ -1741,7 +1854,16 @@ $('#btnHelp').addEventListener('click', ()=>{
 });
 
 // 前に開いていたときの内容(テキストと設定)を、このブラウザの保存から戻す
-{ const d=loadDoc(); if(d){ srcEl.value=d.source; applyOptions(d.options); } }
+{ const d=loadDoc();
+  if(d){
+    srcEl.value=d.source; applyOptions(d.options);
+    const f=d.file && typeof d.file==='object' ? d.file : null;
+    fileName= f && typeof f.name==='string' ? f.name : '';
+    fileBase= f && typeof f.base==='string' && f.base ? f.base : 'circuit';
+    // 上書きの先は覚えていないので、次の上書き保存では保存先を尋ねる(プロジェクト計画と同じ)
+    savedText= f ? (f.dirty? null : d.source) : (d.source.trim()===''? '' : null);
+  }
+  showName(); }
 render();
 </script>
 </body>

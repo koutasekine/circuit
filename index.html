@@ -1485,7 +1485,8 @@ function showName(){ const e=$('#fileName'); const d=isDirty() && srcEl.value.tr
 function setDoc(text, o){
   editGen++;
   fileName=o.name||''; fileHandle=o.handle||null; if(o.base) fileBase=o.base;
-  setSource(text);
+  // Ctrl+Z では戻せない入れ替えにする(戻すと、前の内容が新しいファイル名・上書きの先に結び付くため。多くのアプリと同じ)
+  srcEl.value=text; selectedId=null; render();
   savedText=srcEl.value;
   showName(); saveDoc();
 }
@@ -1531,6 +1532,7 @@ function render(){
   if(page){ svgEl=CIRC.renderPage(r.L, r.R, CIRC.PAGE[page]); viewEl.classList.add('paged'); }
   else { svgEl=CIRC.renderSVG(r.L, r.R); viewEl.classList.remove('paged'); }
   viewEl.appendChild(svgEl);
+  setPrintPage(page);
   viewEl.querySelectorAll('.sym').forEach(g=>g.addEventListener('click', ev=>{ ev.stopPropagation(); select(g.getAttribute('data-id')); }));
   viewEl.querySelectorAll('.wire').forEach(g=>g.addEventListener('click', ev=>{ ev.stopPropagation(); const pw=g.getAttribute('data-pw'); selectNet(+g.getAttribute('data-net'), pw===null? null : +pw); }));
   if(selectedId){ const gs=viewEl.querySelectorAll(`[data-id="${selectedId}"]`); if(gs.length) gs.forEach(g=>g.classList.add('selected')); else selectedId=null; }
@@ -1575,7 +1577,7 @@ function insertText(t){
   srcEl.focus();
   let ok=false; try{ ok=document.execCommand('insertText', false, t); }catch(e){}
   if(!ok){ const s=srcEl.selectionStart, e=srcEl.selectionEnd; srcEl.value=srcEl.value.slice(0,s)+t+srcEl.value.slice(e); srcEl.selectionStart=srcEl.selectionEnd=s+t.length; }
-  highlight(srcEl.value); if(!ok) saveDoc(); clearTimeout(timer); timer=setTimeout(render, 200);
+  highlight(srcEl.value); if(!ok){ showName(); saveDoc(); } clearTimeout(timer); timer=setTimeout(render, 200);
 }
 srcEl.addEventListener('keydown', e=>{
   if(e.isComposing || e.keyCode===229) return;
@@ -1675,6 +1677,15 @@ function updateEditNet(){
   const b2=document.createElement('button'); b2.textContent='閉じる'; b2.addEventListener('click',()=>select(null)); c2.appendChild(b2);
 }
 
+/* ---- 印刷 / PDF の紙: 用紙「なし」は図と同じ大きさ・余白なし(TeX にそのまま貼れる PDF になる)。A4 は向きも指定する。
+   描くたびに更新するので、ブラウザの印刷(Ctrl+P)でも同じ紙になる ---- */
+function setPrintPage(page){
+  let st=$('#printPage');
+  if(!st){ st=document.createElement('style'); st.id='printPage'; document.head.appendChild(st); }
+  const size= page? 'A4 '+(page==='A4L'? 'landscape' : 'portrait') : svgEl.width.baseVal.value+'px '+svgEl.height.baseVal.value+'px';
+  st.textContent=`@media print{@page{size:${size};margin:0}}`;
+}
+
 /* ---- 保存・読込 ---- */
 function download(name, blob){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 function docJSON(){ return {app:'回路図', url:'https://circuit.sapp.jp', version:1, source:srcEl.value, options:{allPins:$('#optAllPins').checked, page:$('#optPage').value, style:$('#optStyle').value}}; }
@@ -1692,7 +1703,13 @@ function svgText(){
 $('#exportAs').addEventListener('change', ()=>{
   const v=$('#exportAs').value; $('#exportAs').value='';
   if(!v) return;
-  if(v==='print'){ window.print(); return; }
+  if(v==='print'){
+    if(!svgEl || stale){ alert('図がありません(エラーを直してください)'); return; }
+    // 「PDF に保存」のファイル名の候補にする
+    const title=document.title; document.title=fileBase;
+    try{ window.print(); } finally{ document.title=title; }
+    return;
+  }
   if(v==='json'){ download(baseName()+'.json', new Blob([JSON.stringify(docJSON(),null,2)],{type:'application/json'})); return; }
   if(!svgEl || stale){ alert('図がありません(エラーを直してください)'); return; }
   if(v==='svg'){ download(baseName()+'.svg', new Blob([svgText()],{type:'image/svg+xml'})); return; }
@@ -1704,13 +1721,6 @@ $('#exportAs').addEventListener('change', ()=>{
     img.src=url;
   }
 });
-function setSource(text){
-  // テキスト全体を置き換える(Ctrl+Z で元に戻せるよう、可能なら入力操作として置き換える)
-  srcEl.focus(); srcEl.select();
-  let ok=false; try{ ok=document.execCommand('insertText', false, text); }catch(e){}
-  if(!ok || srcEl.value!==text) srcEl.value=text;
-  selectedId=null; render();
-}
 function applyOptions(o){ if(!o) return; $('#optAllPins').checked=!!o.allPins; $('#optPage').value= ['','A4P','A4L'].includes(o.page)? o.page : ''; $('#optStyle').value= ['jp','iec','us'].includes(o.style)? o.style : 'jp'; }
 function openFile(file, handle, handleP){
   if(/\.png$/i.test(file.name)){ alert('PNG は開けません(図の画像だけで、元のテキストを含みません)。.txt、JSON、SVG のいずれかを開いてください。'); return; }
@@ -1796,7 +1806,8 @@ async function saveAsFile(){
   if(!/\.txt$/i.test(name)) name+='.txt';
   const text=srcEl.value;
   downloadText(name);
-  fileName=name; fileBase=baseOf(name);
+  // 前のファイルへの上書きの先は使わない(次の上書き保存では保存先を尋ねる)
+  fileHandle=null; fileName=name; fileBase=baseOf(name);
   savedAs(text, name+' をダウンロードしました');
 }
 async function saveFile(){

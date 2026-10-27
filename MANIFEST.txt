@@ -1,0 +1,12 @@
+# 回路図アプリ(S Apps、リポジトリ circuit、公開先 https://circuit.sapp.jp)。MOS FET・オペアンプ・論理ゲート、線・電源記号のクリックで行へ飛ぶ機能、記号の米国式・JIS/IEC、ブラウザへの自動保存、線の曲がり・交差が少なくなる置き方を選ぶ処理、テキスト(.txt)の上書き保存・別名で保存(Ctrl+S)、図と同じ大きさの紙での印刷 / PDF を追加した版。リポジトリのルートに展開する。
+# index.html                       … アプリ本体(単一 HTML、MIT)。公開用に配置可
+# README.md                        … 説明書。配置可
+# LICENSE                          … MIT License。配置可
+# docs/prompt_for_ai.md            … 生成 AI 向け指示文(全部入り)。配置可
+# docs/prompt_for_ai_hackathon.md  … 生成 AI 向け指示文(Arduino・センサー用)。配置可
+# Claude Code 向けのプロンプトは含まない
+684f0416a0abac6198077d747ceb444e  index.html
+7b3ed2abe3c38c9ee013ecbffbc1d6f4  README.md
+5ec64f26876e09835b1e5e225c805086  LICENSE
+3f0c6479143895e5d7f7179daa2ba749  docs/prompt_for_ai.md
+fa27beb7032aee4ea87bf46d0ebbbf9c  docs/prompt_for_ai_hackathon.md
